@@ -3,6 +3,7 @@ uvicorn
 sqlalchemy
 pydantic
 pydantic-settings
+email-validator
 pwdlib[argon2]
 PyJWT
 google-genai
