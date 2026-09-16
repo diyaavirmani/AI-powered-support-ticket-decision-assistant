@@ -1,0 +1,2 @@
+# Preserve the supplied dataset byte-for-byte; its CRLF terminators are intentional.
+data/tickets.csv -text whitespace=cr-at-eol

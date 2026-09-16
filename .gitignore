@@ -1,0 +1,55 @@
+# Local secrets and environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+
+# Python bytecode and build output
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Test, type-check, lint, and coverage caches
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Runtime persistence and generated retrieval indexes
+*.db
+*.sqlite
+*.sqlite3
+runtime/*
+!runtime/.gitkeep
+*.npz
+*.npy
+*policy_index*.json
+*embedding_cache*.json
+
+# Streamlit and IDE-local configuration
+.streamlit/secrets.toml
+.idea/
+.vscode/
+*.swp
+
+# OS and supplied source artifacts
+.DS_Store
+__MACOSX/
+._*
+candidate_pack.zip
+candidate_pack/
+AI_Engineering_Intern_Take_Home_Project.pdf
+*.pdf
+
+# Logs
+*.log
