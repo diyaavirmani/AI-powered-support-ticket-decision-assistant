@@ -7,6 +7,8 @@ email-validator
 pwdlib[argon2]
 PyJWT
 google-genai
+# x86_64 macOS wheels are available through 44.x; newer releases build OpenSSL locally.
+cryptography>=38,<45; platform_system == "Darwin" and platform_machine == "x86_64"
 numpy
 streamlit
 httpx
