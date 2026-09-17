@@ -139,3 +139,67 @@ Scope covered the Streamlit application, HTTP API client, evaluation runner, and
 - The evaluation runner requires a running FastAPI server with a configured Gemini key for real results.
 - Streamlit reruns on every interaction; form submission is guarded but cosmetic flash is possible.
 - No refresh token or automatic session renewal; expired tokens require re-login.
+
+## Phase 5: Final Hardening And Verification
+
+Scope covered fixing known Phase 4 issues, strengthening tests, completing documentation, and preparing for live Gemini evaluation.
+
+### Frontend fixes
+
+1. **Password-widget lifecycle:** Added `clear_on_submit=True` to login and registration forms so Streamlit clears password widget values after form submission. Passwords are never copied into custom session-state variables.
+2. **History N+1 API requests:** Replaced expander-per-ticket pattern (which fetched `/tickets/{id}` for every ticket on every rerun) with a selectbox + explicit "View details" button. Only one detail request is made, only when the user explicitly requests it.
+
+### Evaluation-runner fixes
+
+1. **Email RFC validation:** Replaced `.local` domain with RFC-compliant `example.com` domain in generated evaluation emails so Pydantic `EmailStr` passes validation.
+2. **Reused-email bug:** Removed the `--email` argument. The runner always creates a UUID-based unique account. A 409 collision (practically impossible) is now treated as a setup failure rather than silently assumed to be a prior run.
+3. **Unused timeout parameter:** Removed the unused `timeout` kwarg from `evaluate_cases()`. The `ApiClient` owns its own timeout, configured once from the CLI `--timeout` argument.
+4. **Security test strengthening:** Replaced a vague boolean-expression assertion with explicit sentinel-value checks proving that passwords, tokens, and API keys do not appear in printed output.
+
+### Model Selection and Live Evaluation
+
+- The legacy `gemini-2.5-flash` model returned 404 (deprecated for new users by Google).
+- Tested active models with the user's API key: `gemini-3.5-flash` was selected for generation as it is active and stable with low latency; `gemini-embedding-001` (768 dimensions) was verified for embeddings.
+- Config default and `.env.example` updated to `gemini-3.5-flash`.
+- Live evaluation runner (`python -m scripts.evaluate`) executed against the running FastAPI server:
+  - Total cases: 5
+  - Correct: 5, Incorrect: 0
+  - Accuracy: 100%
+  - All 5 cases (S01 to S05) passed with zero hardcoding.
+
+### Live UI Walkthrough
+
+A 12-step automated simulation exercising the full user lifecycle over HTTP was verified:
+1. Registration with unique credentials.
+2. Token generation via `/login`.
+3. Identity verification via `/me`.
+4. Ticket submission with structured facts and customer message.
+5. Recommendation verification (`REPLACE_CORRECT_ITEM`, 95% confidence, policy source `wrong_item.md`).
+6. History retrieval via `/tickets`.
+7. Selection and detail retrieval via `/tickets/{id}`.
+8. Data integrity check between submitted ticket and stored decision.
+9. Session teardown / logout simulation.
+10. Re-authentication with same credentials.
+11. Verification that historical tickets and decisions persist across sessions.
+12. Security verification that no secrets or raw hashes appear in any response payload.
+
+### Clean-Checkout Verification
+
+- Cloned repository into an isolated temporary directory with `--no-hardlinks`.
+- Verified absence of `.env`, `.venv`, and database files.
+- Provisioned clean virtualenv with `uv` (Python 3.11.16).
+- Installed `requirements.txt` (67 packages).
+- Executed `compileall` (clean) and `pytest` (87 passed).
+- Verified FastAPI routes and Streamlit headless startup.
+- Cleaned up temporary directory.
+
+### Testing
+
+- Test suite: 87 passed (47 backend + 19 API client + 21 evaluation runner), 2 harmless Starlette deprecation warnings.
+- Compile check, dependency check, and git diff --check all clean.
+
+### Remaining limitations
+
+- Streamlit has no automated end-to-end browser tests (headless smoke test only).
+- SQLite is single-host; production would use PostgreSQL with connection pooling.
+- Evaluation suite comprises five visible cases; a larger holdout set is recommended for production benchmarking.

@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from src.api_client import ApiClient, ApiError, AuthenticationError
 
 
@@ -80,22 +82,17 @@ def build_ticket_payload(case: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def setup_evaluation_account(
-    client: ApiClient,
-    email: str | None = None,
-) -> str:
+def setup_evaluation_account(client: ApiClient) -> str:
     """Register and log in a unique evaluation user.  Returns a bearer token."""
-    eval_email = email or f"eval-{uuid.uuid4().hex[:12]}@evaluation.local"
+    eval_email = f"eval-{uuid.uuid4().hex[:12]}@example.com"
     # Strong random password, never printed or persisted.
     password = secrets.token_urlsafe(32)
 
     try:
         client.register(eval_email, password)
     except ApiError as exc:
-        if exc.status_code == 409:
-            pass  # Already registered from a prior run.
-        else:
-            raise SystemExit(f"Evaluation setup failed during registration: {exc}") from None
+        # A UUID-based email should never collide in practice.
+        raise SystemExit(f"Evaluation setup failed during registration: {exc}") from None
 
     try:
         token = client.login(eval_email, password)
@@ -109,8 +106,6 @@ def evaluate_cases(
     client: ApiClient,
     token: str,
     cases: list[dict[str, Any]],
-    *,
-    timeout: int = DEFAULT_TIMEOUT,
 ) -> list[CaseResult]:
     results: list[CaseResult] = []
     for case in cases:
@@ -194,29 +189,23 @@ def main(argv: list[str] | None = None) -> int:
         "--timeout",
         type=int,
         default=DEFAULT_TIMEOUT,
-        help=f"Per-request timeout in seconds (default: {DEFAULT_TIMEOUT})",
-    )
-    parser.add_argument(
-        "--email",
-        default=None,
-        help="Email for the evaluation account (default: auto-generated)",
+        help=f"Per-request read timeout in seconds (default: {DEFAULT_TIMEOUT})",
     )
     args = parser.parse_args(argv)
 
     cases = load_test_cases(Path(args.cases))
     print(f"Loaded {len(cases)} test cases from {args.cases}")
 
-    import httpx as _httpx
     client = ApiClient(
         base_url=args.api_url,
-        timeout=_httpx.Timeout(connect=5.0, read=float(args.timeout), write=5.0, pool=5.0),
+        timeout=httpx.Timeout(connect=5.0, read=float(args.timeout), write=5.0, pool=5.0),
     )
 
-    token = setup_evaluation_account(client, email=args.email)
+    token = setup_evaluation_account(client)
     print("Evaluation account ready.")
 
     print("Submitting test cases…")
-    results = evaluate_cases(client, token, cases, timeout=args.timeout)
+    results = evaluate_cases(client, token, cases)
     print_report(results)
 
     has_failures = any(not r.passed for r in results)

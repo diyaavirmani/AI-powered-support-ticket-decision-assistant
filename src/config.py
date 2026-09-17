@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=60, gt=0, le=1440)
     gemini_api_key: SecretStr = SecretStr("")
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     gemini_embedding_model: str = "gemini-embedding-001"
     embedding_dimension: int = Field(default=768, gt=0, le=3072)
     retrieval_top_k: int = Field(default=4, gt=0, le=20)

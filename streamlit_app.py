@@ -50,7 +50,7 @@ def render_auth() -> None:
     tab_login, tab_register = st.tabs(["Login", "Register"])
 
     with tab_register:
-        with st.form("register_form"):
+        with st.form("register_form", clear_on_submit=True):
             reg_email = st.text_input("Email", key="reg_email")
             reg_password = st.text_input("Password", type="password", key="reg_password")
             submitted = st.form_submit_button("Register")
@@ -65,7 +65,7 @@ def render_auth() -> None:
                     st.error(str(exc))
 
     with tab_login:
-        with st.form("login_form"):
+        with st.form("login_form", clear_on_submit=True):
             login_email = st.text_input("Email", key="login_email")
             login_password = st.text_input("Password", type="password", key="login_password")
             submitted = st.form_submit_button("Login")
@@ -242,16 +242,32 @@ def render_history() -> None:
         st.info("No tickets yet. Submit a new ticket to get started.")
         return
 
-    for t in tickets:
-        decision = t.get("decision", {})
-        preview = (t.get("message", "")[:80] + "…") if len(t.get("message", "")) > 80 else t.get("message", "")
-        label = (
-            f"**#{t['id']}** — {decision.get('action', '—')} "
-            f"({(decision.get('confidence', 0) * 100):.0f}% confidence) — "
-            f"_{preview}_"
+    # Build selection options from the list response (no per-ticket detail fetch).
+    options = {
+        t["id"]: (
+            f"#{t['id']} — {t.get('decision', {}).get('action', '—')} — "
+            f"{t.get('message', '')[:60]}"
         )
-        with st.expander(label):
-            _render_ticket_detail(t["id"])
+        for t in tickets
+    }
+    ticket_ids = list(options.keys())
+    labels = list(options.values())
+
+    selected_idx = st.selectbox(
+        "Select a ticket to view details",
+        range(len(ticket_ids)),
+        format_func=lambda i: labels[i],
+    )
+
+    if selected_idx is not None:
+        selected_id = ticket_ids[selected_idx]
+        if st.button("View details"):
+            st.session_state["selected_ticket_id"] = selected_id
+
+    # Show detail only for the explicitly selected ticket.
+    detail_id = st.session_state.get("selected_ticket_id")
+    if detail_id is not None:
+        _render_ticket_detail(detail_id)
 
 
 def _render_ticket_detail(ticket_id: int) -> None:
@@ -264,6 +280,8 @@ def _render_ticket_detail(ticket_id: int) -> None:
         st.error(str(exc))
         return
 
+    st.divider()
+    st.subheader(f"Ticket #{ticket.get('id', ticket_id)}")
     st.markdown(f"**Created:** {ticket.get('created_at', '—')}")
     st.markdown(f"**Message:** {ticket.get('message', '—')}")
 

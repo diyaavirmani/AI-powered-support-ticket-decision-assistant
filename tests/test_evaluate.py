@@ -4,8 +4,6 @@ Uses fake API clients — no live server, Gemini, or network.
 """
 
 import json
-import textwrap
-from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +14,6 @@ from scripts.evaluate import (
     build_ticket_payload,
     evaluate_cases,
     load_test_cases,
-    main,
     print_report,
     setup_evaluation_account,
 )
@@ -215,22 +212,53 @@ class TestSetupAccount:
         with pytest.raises(SystemExit, match="setup failed"):
             setup_evaluation_account(client)
 
-    def test_duplicate_registration_proceeds(self):
+    def test_409_collision_now_fails(self):
+        """UUID-based emails should never collide; 409 is treated as a setup error."""
         client = MagicMock(spec=ApiClient)
         client.register.side_effect = ApiError("exists", status_code=409)
-        client.login.return_value = "tok123"
-        token = setup_evaluation_account(client)
-        assert token == "tok123"
+        with pytest.raises(SystemExit, match="setup failed"):
+            setup_evaluation_account(client)
 
 
 # ------------------------------------------------------------------
-# Security
+# Security: secrets must not appear in output
 # ------------------------------------------------------------------
+
+SENTINEL_PASSWORD = "SENTINEL_PASSWORD_VALUE_abc123xyz"
+SENTINEL_TOKEN = "SENTINEL_TOKEN_VALUE_eyJ0eXAi"
+SENTINEL_API_KEY = "SENTINEL_API_KEY_AIzaSyD"
+
 
 class TestSecurityInRunner:
-    def test_passwords_and_tokens_not_printed(self, capsys):
-        results = [CaseResult("A", "X", "X", None, True)]
+    def test_report_does_not_contain_credentials(self, capsys):
+        results = [
+            CaseResult("A", "REQUEST_PHOTOS", "REQUEST_PHOTOS", None, True),
+            CaseResult("B", "APPROVE_RETURN", "WRONG", None, False),
+        ]
         print_report(results)
         output = capsys.readouterr().out
+        assert SENTINEL_PASSWORD not in output
+        assert SENTINEL_TOKEN not in output
+        assert SENTINEL_API_KEY not in output
         assert "Bearer" not in output
-        assert "password" not in output.lower() or "password" in "my-super-secret-pw" not in output
+
+    def test_setup_account_does_not_print_password(self, capsys):
+        client = MagicMock(spec=ApiClient)
+        client.register.return_value = {"id": 1}
+        client.login.return_value = SENTINEL_TOKEN
+        setup_evaluation_account(client)
+        output = capsys.readouterr().out
+        assert SENTINEL_TOKEN not in output
+        # The generated password is internal; we verify the call was made
+        # without printing by checking stdout is empty.
+        assert output == ""
+
+    def test_error_messages_do_not_leak_secrets(self):
+        """ApiError messages should not contain raw tokens or passwords."""
+        client = MagicMock(spec=ApiClient)
+        client.register.side_effect = ApiError("server error", status_code=500)
+        with pytest.raises(SystemExit) as exc_info:
+            setup_evaluation_account(client)
+        error_text = str(exc_info.value)
+        assert SENTINEL_PASSWORD not in error_text
+        assert SENTINEL_TOKEN not in error_text

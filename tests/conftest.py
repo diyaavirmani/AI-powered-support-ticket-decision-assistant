@@ -16,6 +16,7 @@ atexit.register(shutil.rmtree, TEST_DIRECTORY, ignore_errors=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DIRECTORY / 'test.db'}"
 os.environ["JWT_SECRET"] = "test-only-secret-that-is-longer-than-thirty-two-characters"
 os.environ["JWT_ALGORITHM"] = "HS256"
+os.environ["GEMINI_API_KEY"] = ""
 
 from src.api import app  # noqa: E402
 from src.database import Base, SessionLocal, engine  # noqa: E402
