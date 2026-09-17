@@ -167,9 +167,9 @@ Scope covered fixing known Phase 4 issues, strengthening tests, completing docum
   - Accuracy: 100%
   - All 5 cases (S01 to S05) passed with zero hardcoding.
 
-### Live UI Walkthrough
+### Backend Lifecycle Verification via ApiClient
 
-A 12-step automated simulation exercising the full user lifecycle over HTTP was verified:
+A 12-step automated test exercising the full user lifecycle over HTTP was verified via `ApiClient` (verifying backend REST API contracts and SQLite persistence; interactive Streamlit browser verification is conducted separately):
 1. Registration with unique credentials.
 2. Token generation via `/login`.
 3. Identity verification via `/me`.
@@ -178,20 +178,21 @@ A 12-step automated simulation exercising the full user lifecycle over HTTP was 
 6. History retrieval via `/tickets`.
 7. Selection and detail retrieval via `/tickets/{id}`.
 8. Data integrity check between submitted ticket and stored decision.
-9. Session teardown / logout simulation.
+9. Client session teardown (clearing local authentication state; note that existing JWTs remain valid until expiration because server-side token revocation is outside the assignment scope).
 10. Re-authentication with same credentials.
 11. Verification that historical tickets and decisions persist across sessions.
-12. Security verification that no secrets or raw hashes appear in any response payload.
+12. Security verification asserting that passwords, password hashes, and raw API keys do not appear in any response payload.
 
 ### Clean-Checkout Verification
 
 - Cloned repository into an isolated temporary directory with `--no-hardlinks`.
-- Verified absence of `.env`, `.venv`, and database files.
+- Changed directory physically into the clone (`cd "$VERIFY_DIR/clone"`).
+- Confirmed commit HEAD matches target commit, and runtime artifacts (`.env`, `.venv`, `*.db`, caches) are absent.
 - Provisioned clean virtualenv with `uv` (Python 3.11.16).
-- Installed `requirements.txt` (67 packages).
-- Executed `compileall` (clean) and `pytest` (87 passed).
-- Verified FastAPI routes and Streamlit headless startup.
-- Cleaned up temporary directory.
+- Installed `requirements.txt` (67 packages, all compatible).
+- Executed `compileall` (clean) and `pytest` (87 passed hermetically in 3.61s).
+- Verified FastAPI routes and Streamlit headless startup (HTTP 200 on health check).
+- Removed temporary clone directory.
 
 ### Testing
 
