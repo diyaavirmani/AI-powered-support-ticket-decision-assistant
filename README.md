@@ -1,37 +1,98 @@
 # AI Support Decision Assistant
 
-This project is an evidence-backed decision assistant foundation for support tickets. The FastAPI backend authenticates users, retrieves relevant supplied policies, requests a structured decision from Gemini, and stores each user's tickets and decisions in SQLite.
+An evidence-backed decision assistant for support tickets. A user registers, logs in, submits a ticket through Streamlit, and receives a structured AI recommendation grounded in supplied policy documents.
 
-The planned architecture uses separate Streamlit and FastAPI processes. Streamlit calls the authenticated REST API over HTTP only; FastAPI owns authentication, persistence, policy retrieval, Gemini integration, and response validation. The policy index is local and contains only the six supplied policy documents.
+## Architecture
 
-The repository includes the synthetic candidate dataset supplied with the assignment: 214 historical tickets, six policy documents, five visible evaluation cases, and the accompanying data notes. Historical resolved actions are reference data only and will not be indexed or used as an answer bank.
+```
+Streamlit → HTTP/Bearer JWT → FastAPI → authentication → policy retrieval → Gemini → validation → SQLite
+```
 
-The planned stack is Python, FastAPI, Streamlit, SQLAlchemy 2.x, SQLite, Pydantic, `pwdlib` with Argon2, PyJWT, the Google GenAI SDK, and NumPy cosine similarity.
+Streamlit and FastAPI run as separate processes. **Streamlit never accesses SQLite, SQLAlchemy, embeddings, or Gemini directly.** It communicates with FastAPI exclusively through HTTP using `src/api_client.py`.
 
-**Status:** authentication, policy retrieval, structured Gemini decision handling, and the authenticated ticket API are implemented and covered by mocked tests. Streamlit and the evaluation runner are not implemented yet. A real ticket decision requires a Gemini API key; the test suite does not call Google.
+FastAPI owns authentication, persistence, policy retrieval, Gemini integration, and response validation. The policy index is local and contains only the six supplied Markdown policy documents. Historical CSV resolutions are reference data only — they never enter the retrieval index or model prompt.
 
-Never commit `.env`, API keys, JWT secrets, databases, embedding caches, or other runtime artifacts. Copy `.env.example` to `.env` only in a local development environment and provide your own secrets.
+## Stack
 
-## Backend Setup
+Python 3.11, FastAPI, Streamlit, SQLAlchemy 2.x, SQLite, Pydantic, `pwdlib` (Argon2), PyJWT (HS256), Google GenAI SDK (`gemini-2.5-flash`, `gemini-embedding-001`), NumPy cosine similarity, httpx.
 
-Use Python 3.11 or newer for the verified stack:
+## Setup
 
 ```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Set `JWT_SECRET` in `.env` to a private value of at least 32 characters. Set `GEMINI_API_KEY` before requesting ticket decisions. The API can start without a Gemini key, but returns `503` for a valid ticket request when that dependency is not configured.
+Edit `.env` and set:
 
-Start the API and run the tests:
+- **`JWT_SECRET`** — a private value of at least 32 characters.
+- **`GEMINI_API_KEY`** — your Google Gemini API key. The API starts without it but returns `503` for ticket decisions.
+
+## Running
+
+Start FastAPI (terminal 1):
 
 ```bash
 uvicorn src.api:app --reload
+```
+
+Start Streamlit (terminal 2):
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Open `http://localhost:8501` in your browser. Register, log in, submit a ticket, and view decisions.
+
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/register` | Create a user account |
+| `POST` | `/login` | Verify credentials, return a bearer JWT |
+| `GET` | `/me` | Return the authenticated user |
+| `POST` | `/tickets` | Submit a ticket and produce/store a decision |
+| `GET` | `/tickets` | List the authenticated user's ticket history |
+| `GET` | `/tickets/{id}` | Return one owned ticket and its decision |
+
+Registration accepts JSON with `email` and `password` (≥12 characters). Login returns an expiring HS256 bearer token. Ticket endpoints require `Authorization: Bearer <token>`. Cross-user access returns `404`.
+
+## Tests
+
+```bash
 python -m pytest -q
 ```
 
-Registration and login intentionally accept JSON because the Streamlit server-side HTTP client does not need OAuth2 form encoding. Registration requires a valid email and a password of at least 12 characters. Login returns an expiring HS256 bearer token; send it as `Authorization: Bearer <token>` to authenticated routes. `POST /tickets` accepts the message and six nullable structured facts, infers issue type, retrieves only policy Markdown, and returns the stored decision. History endpoints return only tickets owned by the authenticated user.
+The test suite covers authentication, persistence, retrieval, decision validation, authorization, the HTTP client boundary, and the evaluation runner. All tests use mocked dependencies — no Gemini key or network required.
 
-Retrieval uses deterministic rule-aware Markdown chunks, Gemini embeddings, and NumPy cosine similarity. Its validated cache lives in ignored `runtime/`. Historical CSV resolutions are retained as supplied data but never enter the retrieval index or model prompt. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries, limitations, and rejected alternatives.
+## Evaluation
+
+The evaluation runner submits the five supplied test cases through the live API and compares returned actions to expected actions:
+
+```bash
+python -m scripts.evaluate
+```
+
+Requires a running FastAPI server with a configured Gemini key. The runner auto-creates a temporary evaluation account.
+
+Output format:
+
+```
+5 test cases
+Correct: X
+Incorrect: Y
+Accuracy: Z%
+```
+
+## Configuration
+
+See [`.env.example`](.env.example) for all settings. Never commit `.env`, API keys, JWT secrets, databases, embedding caches, or other runtime artifacts.
+
+## Documentation
+
+- [Architecture and design decisions](docs/ARCHITECTURE.md)
+- [Requirements traceability](docs/REQUIREMENTS.md)
+- [Development log](DEVELOPMENT.md)
+- [Data notes](DATA_NOTES.md)

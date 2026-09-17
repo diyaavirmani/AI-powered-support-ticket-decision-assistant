@@ -86,3 +86,56 @@ Decisions and limitations:
 - No live Gemini smoke call was used; the deterministic suite exercises the same validation and API seams without network access or secrets. The actual provider account/model availability remains unverified.
 
 Verification for this checkpoint is recorded with the final report. Meaningful corrections made during implementation included deferring provider setup until a valid authenticated ticket request (so invalid input remains `422`) and matching categorical validation to the supplied data rather than guessed product categories.
+
+## Phase 4: Streamlit Frontend And Evaluation Runner
+
+Scope covered the Streamlit application, HTTP API client, evaluation runner, and focused tests for both. The AI coding assistant (Antigravity / Claude Opus 4.6) was used for implementation under operator-supplied constraints and architecture. Generated code was inspected against the assignment requirements, tested, and corrected where needed.
+
+### HTTP API client (`src/api_client.py`)
+
+- Uses `httpx` with explicit connect/read timeouts.
+- Maps backend HTTP status codes (401, 409, 422, 502, 503) to safe `ApiError`/`AuthenticationError` exceptions.
+- Connection failures and timeouts become user-facing messages without leaking tokens, passwords, headers, or stack traces.
+- Streamlit never imports `src.database`, `src.models`, `src.retrieval`, or `src.decision`.
+
+### Streamlit application (`streamlit_app.py`)
+
+- Three areas: Login/Register, New Decision, History.
+- Session state stores only the bearer token, user summary, selected ticket, and last decision. No disk persistence.
+- Login/Register: masked password inputs, generic error messages, registration guides user to log in.
+- New Decision: text area for message, nullable numeric inputs (blank = null, not zero), select boxes with "Not specified" sentinel for enums. No `issue_type` field. Loading spinner during API call. Decision display shows action, confidence as percentage, reason, and source filenames.
+- History: loads ticket list via `GET /tickets`, expandable per-ticket detail via `GET /tickets/{id}`, shows original inputs and stored decision.
+- 401 errors clear the session and return user to login.
+- Backend unavailability, validation errors, and AI service errors display clear user-facing messages.
+
+### Evaluation runner (`scripts/evaluate.py`)
+
+- Loads and validates `sample_test_cases.json`.
+- Registers a unique evaluation user with a strong random password (never printed).
+- Submits all five cases through `POST /tickets`.
+- Compares returned `decision.action` with `expected_action`.
+- Prints per-case result and summary: total, correct, incorrect, accuracy percentage.
+- One failed case does not stop later cases.
+- Supports `--api-url`, `--cases`, `--timeout`, `--email` CLI arguments.
+- No hardcoded answers, no CSV lookups, no direct Gemini calls.
+
+### Testing
+
+- 19 API client tests: correct JSON payloads, bearer headers, null preservation, no `issue_type`, timeout/connection error mapping, all HTTP status mappings, token/password leak prevention, import smoke test.
+- 19 evaluation runner tests: case loading and validation, payload construction, correct/incorrect counting, accuracy formatting, error resilience, setup failure handling, security checks.
+- Full suite: 85 passed (47 backend + 19 client + 19 evaluation), 2 Starlette deprecation warnings.
+
+### Verification
+
+- `python -m compileall -q src scripts tests streamlit_app.py`: clean.
+- `python -m pytest -q`: 85 passed.
+- `python -m scripts.evaluate --help`: CLI operates correctly.
+- Streamlit import and bounded headless startup verified.
+- No live Gemini evaluation was performed in this phase. Accuracy will be measured when a Gemini key is configured.
+
+### Limitations
+
+- Streamlit does not have automated end-to-end UI tests beyond import verification.
+- The evaluation runner requires a running FastAPI server with a configured Gemini key for real results.
+- Streamlit reruns on every interaction; form submission is guarded but cosmetic flash is possible.
+- No refresh token or automatic session renewal; expired tokens require re-login.
