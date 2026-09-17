@@ -25,9 +25,9 @@ FastAPI and Streamlit run as separate processes. This is enough separation to de
 | Streamlit | Collect credentials and structured ticket facts, hold the access token in session state, call FastAPI over HTTP, and render decisions/history. |
 | FastAPI routers | Validate HTTP input, apply authentication dependencies, map domain errors to stable responses, and serialize Pydantic response models. |
 | Auth service | Normalize emails, hash/verify passwords with Argon2 through `pwdlib`, and issue/validate PyJWT bearer tokens. |
-| Repositories | Perform user-scoped SQLAlchemy 2.x queries and atomic persistence. They contain no Gemini or UI logic. |
-| Policy index | Load only `knowledge_base/*.md`, chunk text, embed/cache chunks, and rank them with NumPy cosine similarity. |
-| Decision service | Orchestrate retrieval and Gemini generation, validate structured output and citations, and return a domain decision. |
+| Ticket API | Perform user-scoped SQLAlchemy 2.x history queries and persist a validated ticket/decision pair in one transaction. |
+| Policy index | Load only sorted `knowledge_base/*.md`, group complete numbered rules with overlap, embed/cache chunks, and rank them with NumPy cosine similarity. |
+| Decision service | Pass ticket facts to retrieval, construct an injection-aware evidence prompt, validate structured output, and enforce retrieved-source citations. |
 | Gemini adapter | Narrow wrapper over the Google GenAI SDK so tests can inject a deterministic fake without network calls. |
 | Evaluation runner | Submit the five supplied cases through the same decision boundary and compare validated action enums. |
 
@@ -37,7 +37,7 @@ FastAPI and Streamlit run as separate processes. This is enough separation to de
 2. For a ticket request, FastAPI validates nullable structured facts without replacing missing values with zero, then resolves the current user from the JWT.
 3. The retriever embeds the ticket message plus provided facts and selects a small set of policy chunks from the policy-only index.
 4. The decision service sends clearly delimited ticket data and retrieved chunks to Gemini with a JSON Schema derived from Pydantic. The model infers issue type; callers do not supply it.
-5. Pydantic validates the action enum, issue type, confidence range, reason, and sources. A second validator requires every cited basename to be in the retrieved set.
+5. Pydantic validates the closed action and inferred-issue enums, confidence range, reason, and deduplicated sources. A second validator requires every cited filename to be in the retrieved set.
 6. Only after a valid decision exists, one database transaction inserts the ticket and its decision. The response returns the committed record.
 7. History and detail queries always include `user_id` in the predicate. A record owned by another user is exposed as not found.
 
@@ -51,7 +51,7 @@ JSON is used for registration, login, and ticket bodies. Validation errors use F
 | `POST /login` | No | Email and password | `200`, access token, `bearer` type, expiry | `401` generic invalid credentials |
 | `GET /me` | Bearer | None | `200`, public user fields | `401` invalid/expired token |
 | `POST /tickets` | Bearer | Message plus six nullable structured ticket fields | `201`, ticket and validated decision | `401`; `422`; `502/503` AI or embedding dependency failure |
-| `GET /tickets` | Bearer | Optional bounded pagination | `200`, newest-first owned summaries | `401` |
+| `GET /tickets` | Bearer | Optional bounded pagination | `200`, newest-first owned tickets with stored decisions | `401` |
 | `GET /tickets/{id}` | Bearer | Positive integer path ID | `200`, owned ticket and decision | `401`; `404` missing or not owned |
 
 Ticket fields are `message`, `order_value_inr`, `days_since_delivery`, `days_since_dispatch`, `product_type`, `opened_status`, and `order_status`. Numeric facts accept zero where meaningful and `null` where unknown. Enumerated facts accept explicit `unknown` values from the supplied format while a genuinely absent field remains `null`.
@@ -81,18 +81,18 @@ The six structured ticket fields extend the assignment's minimum schema because 
 
 RAG is selected over cache-augmented generation (CAG) because retrieval is explicitly evaluated and demonstrates document loading, chunking, embeddings, ranking, and grounding without placing the complete policy corpus in every prompt. With only six small files CAG could work, but it would hide the retrieval behavior the assignment asks to assess.
 
-The indexer sorts policy paths for determinism and rejects files outside `knowledge_base/*.md`. Markdown is split by heading/paragraph boundaries with bounded overlap only when a section exceeds the target size; each chunk retains filename and stable ordinal. Historical CSV rows and `resolved_action` never enter this loader.
+The indexer sorts `knowledge_base/*.md` filenames and reads UTF-8 content only from that fixed directory. It groups three numbered rules per chunk with one-rule overlap, retaining wrapped continuation lines and policy title/filename provenance. Stable chunk IDs include a content digest. Historical CSV rows and `resolved_action` never enter this loader.
 
-Embeddings use the configurable `gemini-embedding-2` model with output dimension 768. A SHA-256 fingerprint covers sorted filename/content bytes, embedding model, dimension, and a chunker-version constant. Matching embeddings and chunk metadata are read from one local NPZ cache; a mismatch triggers complete rebuild and atomic replacement. Vectors are normalized once, the query vector is normalized, and NumPy dot product provides cosine ranking. Empty/zero or malformed vectors fail closed.
+`src/retrieval.py` defines an injectable embedder; production uses `google-genai` with `RETRIEVAL_DOCUMENT` and `RETRIEVAL_QUERY`. The configurable default is `gemini-embedding-001`, output dimension 768, and top-k 4. A SHA-256 fingerprint covers sorted source filenames, exact source contents, chunking version/rules/overlap, model, and dimension. The ignored local NPZ cache validates metadata, chunk IDs/texts/provenance, count, shape, finite nonzero vectors, and fingerprint. Stale or malformed caches rebuild to a temporary file and replace atomically. Normalized NumPy dot products rank cosine similarity with stable tie ordering.
 
-The generation default is configurable as `gemini-3.8-flash`. Retrieved chunks include stable identifiers and filenames. Ticket text is delimited as untrusted data and cannot provide system instructions or authorize new sources. A small top-k supplies enough evidence without bloating the prompt.
+Generation uses the configurable stable `gemini-2.5-flash` default, temperature zero, and the installed SDK's JSON Schema structured response support. Ticket text and facts are labelled untrusted; the prompt says to ignore embedded instructions, use only retrieved policy evidence, and never treat historical decisions as evidence. Missing Gemini configuration and provider failures produce controlled `503` responses.
 
 ## Structured Decision Validation
 
 The model receives a response schema generated from a Pydantic model with:
 
 - `action`: one member of the 15-value validated action enum;
-- `inferred_issue_type`: one of the six policy categories or `unknown`;
+- `inferred_issue_type`: one of the observed synthetic dataset labels or `unknown` (`cancellation`, `damaged`, `defective`, `return`, `shipping_delay`, `wrong_item`);
 - `confidence`: finite number from 0 through 1;
 - `reason`: nonblank, bounded text grounded in supplied facts and retrieved policy;
 - `sources`: nonempty, deduplicated policy filename list.
@@ -117,7 +117,7 @@ REQUEST_PHOTOS
 WAIT_AND_TRACK
 ```
 
-SDK structured output is necessary but not sufficient. The service parses the returned JSON with Pydantic, then verifies that sources are exact basenames in the retrieved chunk set. Unknown paths, URLs, historical data, and retrieved-but-uncited fabricated names are rejected. A single constrained repair attempt may be made using validation errors; a second failure becomes a typed upstream error and nothing is persisted. `NEEDS_MORE_INFORMATION` is the required action when decision-critical facts are absent.
+SDK structured output is necessary but not sufficient. The service parses the returned JSON with Pydantic, then verifies that sources are exact filenames in the retrieved chunk set. Unknown paths, URLs, historical data, and fabricated names are rejected. One bounded repair attempt is allowed without sending raw provider output or secrets back into the prompt; another failure becomes a typed `502` and nothing is persisted. `NEEDS_MORE_INFORMATION` is required when decision-critical facts are absent.
 
 ## Error Boundaries
 
@@ -129,7 +129,7 @@ SDK structured output is necessary but not sufficient. The service parses the re
 
 ## Testing Strategy
 
-Unit tests will cover configuration, nullable-versus-zero parsing, password/JWT behavior, chunk determinism, fingerprints, cosine ranking, action/schema validation, and the citation allowlist. API integration tests will use a temporary SQLite database plus dependency-injected fake Gemini/retrieval adapters. They will cover all endpoints, expired/malformed tokens, duplicate users, persistence, failure rollbacks, and the required Alice-cannot-read-Bob scenario. Streamlit's client boundary will be tested without database imports. The evaluation runner will exercise the same decision service on all five supplied cases and report totals, errors, and accuracy; visible cases will not be copied into prompts or production branches.
+The current suite uses temporary SQLite databases, deterministic fake embedders, and injected decision generators; no test needs Gemini credentials or internet. It covers auth, schema, all policies, deterministic rule chunking, ranking, cache hits/invalidation/corruption, malformed vectors, structured-decision validation, API failures, null round-trips, ordering, and Alice/Bob authorization. The Streamlit HTTP boundary and evaluation runner remain future work. Visible cases are not copied into prompts or production branches.
 
 ## Security Considerations
 
@@ -139,7 +139,7 @@ Unit tests will cover configuration, nullable-versus-zero parsing, password/JWT 
 - Treat ticket messages as prompt-injection-capable data and policy Markdown as the only trusted grounding corpus.
 - Pin the JWT algorithm during decode, use expiring tokens, and keep error messages non-enumerating.
 - Ignore `.env`, databases, indexes, Streamlit secrets, caches, logs, source attachments, and OS metadata in Git.
-- Dependencies will be pinned after installation and a verified test run; unverified version guesses are deliberately absent from the scaffold.
+- `google-genai` is the provider SDK; the installed version's schema and embedding configuration were inspected. Dependencies remain unpinned to avoid guessing broad version locks. On x86_64 macOS, a constrained `cryptography` wheel dependency avoids requiring a local OpenSSL build toolchain.
 
 ## Assumptions And Limitations
 

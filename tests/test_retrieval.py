@@ -10,6 +10,7 @@ import pytest
 from src.retrieval import (
     EmbeddingValidationError,
     PolicyRetriever,
+    PolicyDocument,
     chunk_policy_documents,
     load_policy_documents,
 )
@@ -108,6 +109,18 @@ def test_rule_aware_chunking_is_deterministic_and_retains_provenance() -> None:
     assert "above ₹2,000" in damaged_chunks[0].text
 
 
+def test_wrapped_conditions_remain_with_their_numbered_rule() -> None:
+    document = PolicyDocument(
+        source_filename="example.md",
+        title="Example Policy",
+        content="# Example Policy\n1. If the parcel is damaged\n   and reported in 7 days, request photos.\n2. Otherwise, wait.",
+    )
+
+    chunks = chunk_policy_documents([document])
+
+    assert "If the parcel is damaged\nand reported in 7 days" in chunks[0].text
+
+
 def test_retrieval_orders_expected_sources_and_uses_stable_ties(tmp_path: Path) -> None:
     embedder = SourceEmbedder()
     retriever = build_retriever(tmp_path, embedder)
@@ -122,6 +135,25 @@ def test_retrieval_orders_expected_sources_and_uses_stable_ties(tmp_path: Path) 
         result.chunk_id for result in results
     )
     assert all(result.similarity == pytest.approx(1.0) for result in results)
+
+
+@pytest.mark.parametrize(
+    "query, expected_source",
+    [
+        ("cancel my order", "cancellations.md"),
+        ("damage on arrival", "damaged_goods.md"),
+        ("functional defect", "defective_products.md"),
+        ("return this item", "returns.md"),
+        ("parcel not arrived after dispatch", "shipping.md"),
+        ("wrong flavour received", "wrong_item.md"),
+    ],
+)
+def test_controlled_queries_retrieve_expected_policy(
+    tmp_path: Path, query: str, expected_source: str
+) -> None:
+    retriever = build_retriever(tmp_path, SourceEmbedder(), top_k=1)
+
+    assert retriever.retrieve(query)[0].source_filename == expected_source
 
 
 def test_cache_hit_avoids_reembedding_policy_documents(tmp_path: Path) -> None:

@@ -8,8 +8,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session, selectinload
 
 from src.auth import (
     DUMMY_PASSWORD_HASH,
@@ -18,9 +18,24 @@ from src.auth import (
     verify_password,
 )
 from src.database import get_db, init_db
+from src.decision import (
+    DecisionError,
+    DecisionValidationError,
+    DecisionWorkflow,
+    LazyProductionDecisionWorkflow,
+)
 from src.dependencies import get_current_user
-from src.models import User
-from src.schemas import LoginRequest, RegistrationRequest, TokenResponse, UserResponse
+from src.models import Decision, Ticket, User
+from src.retrieval import ProviderConfigurationError, ProviderServiceError, RetrievalError
+from src.schemas import (
+    DecisionDraft,
+    LoginRequest,
+    RegistrationRequest,
+    TicketRequest,
+    TicketResponse,
+    TokenResponse,
+    UserResponse,
+)
 
 
 @asynccontextmanager
@@ -94,3 +109,119 @@ def read_current_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     return current_user
+
+
+def ticket_workflow_dependency() -> DecisionWorkflow:
+    return LazyProductionDecisionWorkflow()
+
+
+def _persist_ticket(
+    db: Session, user: User, request: TicketRequest, decision: DecisionDraft
+) -> Ticket:
+    ticket = Ticket(
+        user_id=user.id,
+        message=request.message,
+        order_value_inr=request.order_value_inr,
+        days_since_delivery=request.days_since_delivery,
+        days_since_dispatch=request.days_since_dispatch,
+        product_type=request.product_type.value if request.product_type else None,
+        opened_status=request.opened_status.value if request.opened_status else None,
+        order_status=request.order_status.value if request.order_status else None,
+    )
+    ticket.decision = Decision(
+        action=decision.action.value,
+        inferred_issue_type=decision.inferred_issue_type,
+        reason=decision.reason,
+        confidence=decision.confidence,
+        sources=decision.sources,
+    )
+    db.add(ticket)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not store ticket decision",
+        ) from None
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not store ticket decision",
+        ) from None
+    db.refresh(ticket)
+    return ticket
+
+
+@app.post(
+    "/tickets",
+    response_model=TicketResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_ticket(
+    request: TicketRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    workflow: Annotated[DecisionWorkflow, Depends(ticket_workflow_dependency)],
+) -> Ticket:
+    try:
+        decision = workflow.decide(request)
+    except ProviderConfigurationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI decision service is not configured",
+        ) from None
+    except ProviderServiceError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI decision service is unavailable",
+        ) from None
+    except (DecisionValidationError, DecisionError):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI decision service returned an unusable decision",
+        ) from None
+    except RetrievalError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Policy retrieval service is unavailable",
+        ) from None
+    return _persist_ticket(db, current_user, request, decision)
+
+
+@app.get("/tickets", response_model=list[TicketResponse])
+def list_tickets(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    limit: int = 20,
+    offset: int = 0,
+) -> list[Ticket]:
+    bounded_limit = min(max(limit, 1), 100)
+    bounded_offset = max(offset, 0)
+    statement = (
+        select(Ticket)
+        .options(selectinload(Ticket.decision))
+        .where(Ticket.user_id == current_user.id)
+        .order_by(Ticket.created_at.desc(), Ticket.id.desc())
+        .limit(bounded_limit)
+        .offset(bounded_offset)
+    )
+    return list(db.scalars(statement))
+
+
+@app.get("/tickets/{ticket_id}", response_model=TicketResponse)
+def get_ticket(
+    ticket_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Ticket:
+    statement = (
+        select(Ticket)
+        .options(selectinload(Ticket.decision))
+        .where(Ticket.id == ticket_id, Ticket.user_id == current_user.id)
+    )
+    ticket = db.scalar(statement)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+    return ticket

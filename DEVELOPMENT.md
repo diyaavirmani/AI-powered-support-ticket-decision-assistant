@@ -8,6 +8,7 @@
 - Checkpoint 1 target: 35 minutes.
 - Phase 2 started: 2026-09-17 01:22:01 IST (UTC+05:30).
 - Phase 2 target: 50-60 minutes.
+- Phase 3 started: 2026-09-17 02:21:27 IST (UTC+05:30). Verification finished: 2026-09-17 11:04:08 IST (UTC+05:30). The recorded wall-clock interval was 8 hours, 42 minutes, 41 seconds, including a long interruption; it exceeded the 100-minute hard stop. Active coding time during the interruption is not measurable from this environment.
 
 ## AI Assistance
 
@@ -67,3 +68,21 @@ Verification environment and results:
 - FastAPI import and route inspection: passed; `/register`, `/login`, and `/me` are present.
 
 GitHub reconciliation rebased the scaffold onto the supplied remote `Initial commit` while preserving `LICENSE`. HTTPS push failed with `Invalid username or token`, and the bounded SSH check returned `Permission denied (publickey)`. The remote remains configured with the required HTTPS URL; no credential was requested, displayed, or stored.
+
+## Phase 3: Policy Retrieval And Ticket Decision API
+
+Scope covered local policy-only retrieval, structured Gemini decision generation, and authenticated ticket creation/history. Streamlit and the evaluation runner remain unimplemented. The local GitHub remote was not contacted during this phase; all commits are for the operator to review and push.
+
+Codex implemented the feature behind small embedder, generator, retriever, and workflow protocols. The operator constraints were to keep policy Markdown as the only retrieval corpus, reject `issue_type` on ticket requests, retain nullable fields, prohibit fabricated citations, and test with local fakes. The five visible JSON cases were parsed against the actual ticket contract to confirm their category values and nulls remain valid.
+
+Decisions and limitations:
+
+- The supplied categories are `food`, `non_food`, `mixed`, and `unknown`; the request schema uses those exact values. Historical `issue_type` labels are validated only as the model-derived decision label, never accepted as request evidence.
+- Rule-aware chunking groups three complete numbered rules with one-rule overlap and retains wrapped rule text. The NPZ cache fingerprint includes sorted policy filenames, exact decoded contents, chunking version/settings, embedding model, and dimension. Malformed caches rebuild via atomic replace.
+- Production adapters use the installed `google-genai` SDK, `gemini-embedding-001` at 768 dimensions with top-k 4, and `gemini-2.5-flash` with temperature 0 and JSON Schema output. A missing key returns an explicit API `503`; no fake response is used in production.
+- Decision responses have a closed action enum, constrained inferred issue label, finite confidence in [0, 1], bounded nonblank reason, deduplicated source filenames, and a post-validation source allowlist. One generic repair attempt is allowed; a second failure stores nothing.
+- Ticket and decision records are added and committed in one SQLAlchemy transaction only after provider validation succeeds. History queries filter on owner and sort by timestamp then ID descending.
+- Python 3.11.16 was provisioned with `uv` 0.12.15. The verified environment used `uv venv --clear --python 3.11 .venv`, `uv pip install --python .venv/bin/python -r requirements.txt`, and `uv pip check --python .venv/bin/python`. On this x86_64 macOS setup the unconstrained cryptography source build required local OpenSSL tooling, so requirements constrain that platform to the verified wheel-backed `<45` range. No package-manager installation was performed.
+- No live Gemini smoke call was used; the deterministic suite exercises the same validation and API seams without network access or secrets. The actual provider account/model availability remains unverified.
+
+Verification for this checkpoint is recorded with the final report. Meaningful corrections made during implementation included deferring provider setup until a valid authenticated ticket request (so invalid input remains `422`) and matching categorical validation to the supplied data rather than guessed product categories.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,7 +107,10 @@ class GeminiEmbedder:
             values = [embedding.values for embedding in response.embeddings or []]
         except Exception as exc:
             raise ProviderServiceError("Gemini embedding request failed") from exc
-        return np.asarray(values, dtype=np.float32)
+        try:
+            return np.asarray(values, dtype=np.float32)
+        except (TypeError, ValueError) as exc:
+            raise EmbeddingValidationError("provider returned malformed embeddings") from exc
 
 
 def load_policy_documents(policy_directory: Path = DEFAULT_POLICY_DIRECTORY) -> list[PolicyDocument]:
@@ -118,7 +122,7 @@ def load_policy_documents(policy_directory: Path = DEFAULT_POLICY_DIRECTORY) -> 
     documents: list[PolicyDocument] = []
     for path in sorted(policy_directory.glob("*.md"), key=lambda item: item.name):
         try:
-            content = path.read_text(encoding="utf-8")
+            content = path.read_bytes().decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise PolicyLoadError(f"could not read policy {path.name}") from exc
         if not content.strip():
@@ -133,7 +137,7 @@ def load_policy_documents(policy_directory: Path = DEFAULT_POLICY_DIRECTORY) -> 
             PolicyDocument(
                 source_filename=path.name,
                 title=title,
-                content=content.strip(),
+                content=content,
             )
         )
 
@@ -147,11 +151,20 @@ def chunk_policy_documents(documents: Sequence[PolicyDocument]) -> list[PolicyCh
 
     chunks: list[PolicyChunk] = []
     for document in documents:
-        rules = [
-            line.strip()
-            for line in document.content.splitlines()
-            if line.strip() and not line.startswith("#")
-        ]
+        rules: list[str] = []
+        preamble: list[str] = []
+        for line in document.content.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if re.match(r"^\d+[.)]\s+", stripped):
+                rules.append(stripped)
+            elif rules:
+                rules[-1] = f"{rules[-1]}\n{stripped}"
+            else:
+                preamble.append(stripped)
+        if preamble:
+            rules.insert(0, "\n".join(preamble))
         if not rules:
             raise PolicyLoadError(f"policy {document.source_filename} has no rules")
 
@@ -198,7 +211,10 @@ def build_index_fingerprint(
 
 
 def _normalize_embeddings(values: np.ndarray, dimension: int) -> np.ndarray:
-    array = np.asarray(values, dtype=np.float32)
+    try:
+        array = np.asarray(values, dtype=np.float32)
+    except (TypeError, ValueError) as exc:
+        raise EmbeddingValidationError("embedding values are malformed") from exc
     if array.ndim != 2 or array.shape[1] != dimension or array.shape[0] == 0:
         raise EmbeddingValidationError("embedding shape does not match configuration")
     if not np.isfinite(array).all():
