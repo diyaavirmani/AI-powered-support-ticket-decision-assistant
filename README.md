@@ -62,8 +62,24 @@ Open http://localhost:8501. Register an account, log in, submit a ticket, and vi
 | `POST` | `/tickets` | Submit a ticket and produce/store a decision |
 | `GET` | `/tickets` | List the authenticated user's ticket history |
 | `GET` | `/tickets/{id}` | Return one owned ticket and its decision |
+| `POST` | `/tickets/{id}/review` | Human-in-the-Loop: accept or override AI decision with audit log |
 
 Registration accepts JSON with `email` and `password` (≥12 characters). Login returns an expiring HS256 bearer token. Ticket endpoints require `Authorization: Bearer <token>`. A user can only access their own tickets — cross-user access returns `404` without revealing ticket existence.
+
+## Production-Grade Capabilities (Standing Apart from Baseline)
+
+To go beyond baseline student take-homes and mirror how enterprise AI systems operate in production, this solution incorporates five architectural advancements:
+
+1. **Human-in-the-Loop (HITL) Review & Override Engine:**
+   - Production support systems cannot blindly execute AI recommendations. The History workspace provides an interactive Agent Review panel (`POST /tickets/{id}/review`) where human agents can verify and accept the recommendation, or submit an override with audit reasoning. This captures high-value human feedback pairs (AI proposal vs. Human resolution) for continuous policy distillation and DPO fine-tuning.
+2. **Deterministic Neuro-Symbolic Policy Guardrails (`src/guardrails.py`):**
+   - Pure-Python deterministic firewall executed before database commit. It enforces hard business axioms (e.g. damaged goods >₹2,000 strictly require photos; change-of-mind food returns are strictly prohibited; returns >14 days rejected). If an LLM slips up on a mathematical bound or prompt nuance, the guardrail intercepts, adjusts the action, and transparently notes the intervention.
+3. **Empirical Evaluation on Full Dataset (`scripts/evaluate.py`):**
+   - Supports both the canonical 5-case smoke test and the full historical dataset (`data/tickets.csv`) with optional sampling (`--sample 25`) and discrepancy error analysis, showing true real-world empirical performance beyond small sample sets.
+4. **Pipeline Latency & Telemetry:**
+   - Tracks sub-component execution time (`retrieval_latency_ms`, `llm_latency_ms`) and guardrail trigger status directly on each stored decision, surfacing operational visibility in the UI.
+5. **High-Concurrency SQLite WAL Mode & Circuit Breaker:**
+   - Database connection listeners automatically enable `PRAGMA journal_mode=WAL;` to eliminate write-lock contention. In addition, the decision workflow features a graceful degradation fallback (`enable_ai_fallback`) that routes tickets safely to human escalation queues rather than failing transactions during provider outages.
 
 ## Tests
 

@@ -62,8 +62,40 @@ def test_required_tables_columns_and_constraints_exist(db_session: Session) -> N
         "confidence",
         "sources",
         "created_at",
+        "retrieval_latency_ms",
+        "llm_latency_ms",
+        "guardrail_triggered",
+        "human_override_action",
+        "human_override_reason",
+        "reviewed_at",
     } == decision_columns
-    assert all(not column["nullable"] for column in raw_decision_columns)
+    decision_nullability = {
+        column["name"]: column["nullable"] for column in raw_decision_columns
+    }
+    assert all(
+        not decision_nullability[name]
+        for name in (
+            "id",
+            "ticket_id",
+            "action",
+            "inferred_issue_type",
+            "reason",
+            "confidence",
+            "sources",
+            "created_at",
+        )
+    )
+    assert all(
+        decision_nullability[name]
+        for name in (
+            "retrieval_latency_ms",
+            "llm_latency_ms",
+            "guardrail_triggered",
+            "human_override_action",
+            "human_override_reason",
+            "reviewed_at",
+        )
+    )
 
     email_indexes = inspector.get_indexes("users")
     assert any(

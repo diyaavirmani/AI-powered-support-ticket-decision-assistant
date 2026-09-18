@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     embedding_dimension: int = Field(default=768, gt=0, le=3072)
     retrieval_top_k: int = Field(default=4, gt=0, le=20)
     rag_index_path: Path = Path("runtime/policy_index.npz")
+    enable_ai_fallback: bool = False
 
 
 @lru_cache

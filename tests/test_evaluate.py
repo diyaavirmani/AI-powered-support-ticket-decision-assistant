@@ -59,6 +59,22 @@ class TestLoadCases:
         with pytest.raises(SystemExit, match="expected_action"):
             load_test_cases(incomplete)
 
+    def test_csv_loading_and_sampling(self, tmp_path):
+        csv_file = tmp_path / "tickets.csv"
+        csv_file.write_text(
+            "ticket_id,message,order_value_inr,resolved_action\n"
+            "1,Broken item,2500,REQUEST_PHOTOS\n"
+            "2,Unopened non-food,1200,APPROVE_RETURN\n"
+            "3,Dispatched delay,800,OPEN_SHIPPING_INVESTIGATION\n",
+            encoding="utf-8",
+        )
+        cases = load_test_cases(csv_file, sample_size=2)
+        assert len(cases) == 2
+        assert cases[0]["case_id"] == "T1"
+        assert cases[0]["expected_action"] == "REQUEST_PHOTOS"
+        assert cases[0]["order_value_inr"] == 2500.0
+        assert cases[1]["case_id"] == "T2"
+
 
 # ------------------------------------------------------------------
 # Payload construction

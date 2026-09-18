@@ -290,3 +290,67 @@ class TestStreamlitImport:
         assert hasattr(mod, "ApiClient")
         assert hasattr(mod, "ApiError")
         assert hasattr(mod, "AuthenticationError")
+
+        app_mod = importlib.import_module("streamlit_app")
+        assert hasattr(app_mod, "main")
+        assert hasattr(app_mod, "render_auth")
+        assert hasattr(app_mod, "render_new_decision")
+        assert hasattr(app_mod, "render_history")
+        assert hasattr(app_mod, "format_action_label")
+        assert hasattr(app_mod, "format_issue_type")
+        assert hasattr(app_mod, "get_action_style")
+
+    def test_presentation_helpers(self):
+        from streamlit_app import format_action_label, format_issue_type, get_action_style
+
+        # format_action_label
+        assert format_action_label("REPLACE_CORRECT_ITEM") == "Replace Correct Item"
+        assert format_action_label("APPROVE_RETURN") == "Approve Return"
+        assert format_action_label("") == "—"
+        assert format_action_label(None) == "—"
+
+        # format_issue_type
+        assert format_issue_type("damaged") == "Damaged Goods"
+        assert format_issue_type("shipping_delay") == "Shipping Delay"
+        assert format_issue_type("wrong_item") == "Wrong Item Received"
+        assert format_issue_type("cancellation") == "Order Cancellation"
+        assert format_issue_type("unknown") == "Unspecified Issue"
+        assert format_issue_type(None) == "Unspecified Issue"
+
+        # get_action_style
+        approved = get_action_style("APPROVE_RETURN")
+        assert approved["category"] == "Approved"
+        assert approved["icon"] == ""
+        assert "#" in approved["bg"]
+
+        info = get_action_style("REQUEST_PHOTOS")
+        assert info["category"] == "Needs Information"
+        assert info["icon"] == ""
+
+        action_req = get_action_style("REPLACE_CORRECT_ITEM")
+        assert action_req["category"] == "Action Required"
+
+        ineligible = get_action_style("CANNOT_CANCEL_AFTER_DISPATCH")
+        assert ineligible["category"] == "Ineligible"
+        assert ineligible["icon"] == ""
+
+        fallback = get_action_style("NONEXISTENT_ACTION")
+        assert fallback["category"] == "Decision"
+
+    def test_review_ticket_request(self):
+        resp = _mock_response(200, {"id": 1, "decision": {"action": "APPROVE_RETURN"}})
+        client, mock_req = _patched_client(resp)
+        with patch("src.api_client.httpx.Client") as mock_cls:
+            _apply_mock(mock_req)
+            mock_cls.return_value.__enter__.return_value.request = mock_req
+            client.review_ticket("tok", 42, action="APPROVE_RETURN", reason="VIP override", accept=False)
+
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1] == "http://testapi:8000/tickets/42/review"
+        assert call_args[1]["json"] == {
+            "accept": False,
+            "action": "APPROVE_RETURN",
+            "reason": "VIP override",
+        }

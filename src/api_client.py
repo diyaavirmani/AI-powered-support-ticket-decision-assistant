@@ -202,3 +202,24 @@ class ApiClient:
             f"/tickets/{ticket_id}",
             token=token,
         )
+
+    def review_ticket(
+        self,
+        token: str,
+        ticket_id: int,
+        *,
+        action: str | None = None,
+        reason: str | None = None,
+        accept: bool = False,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"accept": accept}
+        if action:
+            body["action"] = action
+        if reason:
+            body["reason"] = reason
+        return self._request(
+            "POST",
+            f"/tickets/{ticket_id}/review",
+            token=token,
+            json_body=body,
+        )

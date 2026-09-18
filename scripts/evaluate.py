@@ -16,7 +16,9 @@ import argparse
 import json
 import secrets
 import sys
+import time
 import uuid
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +29,12 @@ from src.api_client import ApiClient, ApiError, AuthenticationError
 
 
 DEFAULT_API_URL = "http://localhost:8000"
-DEFAULT_CASES_PATH = Path(__file__).resolve().parents[1] / "sample_test_cases.json"
+_DOWNLOADS_CANDIDATE_PACK = Path.home() / "Downloads" / "candidate_pack" / "sample_test_cases.json"
+DEFAULT_CASES_PATH = (
+    _DOWNLOADS_CANDIDATE_PACK
+    if _DOWNLOADS_CANDIDATE_PACK.is_file()
+    else Path(__file__).resolve().parents[1] / "sample_test_cases.json"
+)
 DEFAULT_TIMEOUT = 60
 
 
@@ -40,26 +47,60 @@ class CaseResult:
     passed: bool
 
 
-def load_test_cases(path: Path) -> list[dict[str, Any]]:
-    """Load and validate the JSON test case file."""
+def load_test_cases(path: Path, sample_size: int | None = None) -> list[dict[str, Any]]:
+    """Load and validate JSON or CSV test case files."""
     if not path.is_file():
         raise SystemExit(f"Test case file not found: {path}")
-    try:
-        raw = path.read_text(encoding="utf-8")
-        cases = json.loads(raw)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SystemExit(f"Cannot read test cases: {exc}") from None
 
-    if not isinstance(cases, list) or not cases:
-        raise SystemExit("Test cases must be a nonempty JSON array.")
+    if path.suffix.lower() == ".csv":
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise SystemExit(f"Cannot read test cases: {exc}") from None
 
-    for idx, case in enumerate(cases):
-        if not isinstance(case, dict):
-            raise SystemExit(f"Test case {idx} is not an object.")
-        if "case_id" not in case or "expected_action" not in case:
-            raise SystemExit(f"Test case {idx} is missing case_id or expected_action.")
-        if "message" not in case:
-            raise SystemExit(f"Test case {idx} is missing a message.")
+        lines = [line for line in raw.splitlines() if line.strip()]
+        if not lines or len(lines) <= 1:
+            raise SystemExit("Test cases must be a nonempty CSV file.")
+
+        reader = csv.DictReader(lines)
+        cases: list[dict[str, Any]] = []
+        for idx, row in enumerate(reader):
+            expected = row.get("resolved_action")
+            if not expected:
+                continue
+            case_id = f"T{row.get('ticket_id', idx + 1)}"
+            cases.append({
+                "case_id": case_id,
+                "message": row.get("message", ""),
+                "expected_action": expected,
+                "order_value_inr": float(row["order_value_inr"]) if row.get("order_value_inr") else None,
+                "days_since_delivery": int(row["days_since_delivery"]) if row.get("days_since_delivery") else None,
+                "days_since_dispatch": int(row["days_since_dispatch"]) if row.get("days_since_dispatch") else None,
+                "product_type": row.get("product_type") or None,
+                "opened_status": row.get("opened_status") or None,
+                "order_status": row.get("order_status") or None,
+            })
+    else:
+        try:
+            raw = path.read_text(encoding="utf-8")
+            cases = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"Cannot read test cases: {exc}") from None
+
+        if not isinstance(cases, list) or not cases:
+            raise SystemExit("Test cases must be a nonempty JSON array.")
+
+        for idx, case in enumerate(cases):
+            if not isinstance(case, dict):
+                raise SystemExit(f"Test case {idx} is not an object.")
+            if "case_id" not in case or "expected_action" not in case:
+                raise SystemExit(f"Test case {idx} is missing case_id or expected_action.")
+            if "message" not in case:
+                raise SystemExit(f"Test case {idx} is missing a message.")
+
+    if sample_size is not None and sample_size > 0:
+        cases = cases[:sample_size]
+
     return cases
 
 
@@ -106,9 +147,12 @@ def evaluate_cases(
     client: ApiClient,
     token: str,
     cases: list[dict[str, Any]],
+    delay: float = 0.0,
 ) -> list[CaseResult]:
     results: list[CaseResult] = []
-    for case in cases:
+    for idx, case in enumerate(cases):
+        if idx > 0 and delay > 0:
+            time.sleep(delay)
         case_id = case["case_id"]
         expected = case["expected_action"]
         payload = build_ticket_payload(case)
@@ -170,6 +214,13 @@ def print_report(results: list[CaseResult]) -> None:
     print(f"Incorrect: {incorrect}")
     print(f"Accuracy: {accuracy:.0f}%")
 
+    failures = [r for r in results if not r.passed]
+    if failures:
+        print()
+        print(f"Discrepancy Audit ({len(failures)} cases):")
+        for f in failures[:10]:
+            print(f"  • {f.case_id}: expected={f.expected} actual={f.actual or f.error}")
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -183,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--cases",
         default=str(DEFAULT_CASES_PATH),
-        help=f"Path to the JSON test cases file (default: {DEFAULT_CASES_PATH})",
+        help=f"Path to the JSON or CSV test cases file (default: {DEFAULT_CASES_PATH})",
     )
     parser.add_argument(
         "--timeout",
@@ -191,9 +242,21 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_TIMEOUT,
         help=f"Per-request read timeout in seconds (default: {DEFAULT_TIMEOUT})",
     )
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=None,
+        help="Optional limit on number of cases to evaluate",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=2.0,
+        help="Delay in seconds between requests to prevent API rate limits (default: 2.0)",
+    )
     args = parser.parse_args(argv)
 
-    cases = load_test_cases(Path(args.cases))
+    cases = load_test_cases(Path(args.cases), sample_size=args.sample)
     print(f"Loaded {len(cases)} test cases from {args.cases}")
 
     client = ApiClient(
@@ -205,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
     print("Evaluation account ready.")
 
     print("Submitting test cases…")
-    results = evaluate_cases(client, token, cases)
+    results = evaluate_cases(client, token, cases, delay=args.delay)
     print_report(results)
 
     has_failures = any(not r.passed for r in results)

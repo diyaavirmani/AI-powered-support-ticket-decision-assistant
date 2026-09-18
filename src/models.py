@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -87,6 +87,14 @@ class Decision(Base):
     reason: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float)
     sources: Mapped[List[str]] = mapped_column(JSON)
+    retrieval_latency_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    llm_latency_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    guardrail_triggered: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False)
+    human_override_action: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    human_override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )

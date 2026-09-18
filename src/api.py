@@ -25,12 +25,13 @@ from src.decision import (
     LazyProductionDecisionWorkflow,
 )
 from src.dependencies import get_current_user
-from src.models import Decision, Ticket, User
+from src.models import Decision, Ticket, User, utc_now
 from src.retrieval import ProviderConfigurationError, ProviderServiceError, RetrievalError
 from src.schemas import (
     DecisionDraft,
     LoginRequest,
     RegistrationRequest,
+    ReviewRequest,
     TicketRequest,
     TicketResponse,
     TokenResponse,
@@ -134,6 +135,9 @@ def _persist_ticket(
         reason=decision.reason,
         confidence=decision.confidence,
         sources=decision.sources,
+        retrieval_latency_ms=decision.retrieval_latency_ms,
+        llm_latency_ms=decision.llm_latency_ms,
+        guardrail_triggered=decision.guardrail_triggered,
     )
     db.add(ticket)
     try:
@@ -224,4 +228,45 @@ def get_ticket(
     ticket = db.scalar(statement)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+    return ticket
+
+
+@app.post("/tickets/{ticket_id}/review", response_model=TicketResponse)
+def review_ticket(
+    ticket_id: int,
+    request: ReviewRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Ticket:
+    statement = (
+        select(Ticket)
+        .options(selectinload(Ticket.decision))
+        .where(Ticket.id == ticket_id, Ticket.user_id == current_user.id)
+    )
+    ticket = db.scalar(statement)
+    if ticket is None or ticket.decision is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+    if request.accept:
+        ticket.decision.human_override_action = ticket.decision.action
+        ticket.decision.human_override_reason = request.reason or "Accepted by human agent"
+    else:
+        if not request.action or not request.reason:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Action and reason are required when overriding a decision.",
+            )
+        ticket.decision.human_override_action = request.action.value
+        ticket.decision.human_override_reason = request.reason
+
+    ticket.decision.reviewed_at = utc_now()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not record review",
+        ) from None
+    db.refresh(ticket)
     return ticket

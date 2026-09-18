@@ -121,6 +121,9 @@ class DecisionDraft(BaseModel):
     reason: str = Field(min_length=1, max_length=1_500)
     sources: list[str] = Field(min_length=1, max_length=6)
     inferred_issue_type: IssueType
+    retrieval_latency_ms: float | None = None
+    llm_latency_ms: float | None = None
+    guardrail_triggered: bool | None = False
 
     @field_validator("confidence")
     @classmethod
@@ -153,6 +156,27 @@ class DecisionResponse(DecisionDraft):
 
     id: int
     created_at: datetime
+    human_override_action: str | None = None
+    human_override_reason: str | None = None
+    reviewed_at: datetime | None = None
+
+
+class ReviewRequest(BaseModel):
+    """Human-in-the-Loop review: accept or override an AI decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Action | None = None
+    reason: str | None = Field(default=None, max_length=1_000)
+    accept: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is not None:
+            stripped = value.strip()
+            return stripped if stripped else None
+        return None
 
 
 class TicketResponse(BaseModel):

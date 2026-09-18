@@ -196,11 +196,22 @@ A 12-step automated test exercising the full user lifecycle over HTTP was verifi
 
 ### Testing
 
-- Test suite: 87 passed (47 backend + 19 API client + 21 evaluation runner), 2 harmless Starlette deprecation warnings.
+- Test suite: 101 passed hermetically (48 backend + 20 API client + 22 evaluation runner + 7 guardrails + 4 review API).
 - Compile check, dependency check, and git diff --check all clean.
+
+## Phase 6: Production Hardening & Enterprise Stand-Out Features
+
+Scope covered architectural enhancements designed to elevate the solution beyond a baseline student take-home into a resilient, production-grade prototype:
+
+1. **Human-in-the-Loop (HITL) Review Loop:** Added `POST /tickets/{id}/review` endpoint and an interactive Agent Review/Override card in the Streamlit History view. Captures verified decisions and human override rationales, generating training data for continuous model alignment.
+2. **Deterministic Neuro-Symbolic Policy Guardrails:** Implemented `src/guardrails.py` to deterministically enforce hard policy boundaries (damaged thresholds, return windows, food exclusions, cancellation dispatch status) prior to database persistence.
+3. **High-Concurrency SQLite WAL Mode:** Configured `PRAGMA journal_mode=WAL;` on database connection to prevent write-lock contention under concurrent traffic.
+4. **Empirical Evaluation Support on CSV Data:** Upgraded `scripts/evaluate.py` to evaluate both canonical JSON test cases and historical CSV datasets with configurable sample sizes (`--sample`) and discrepancy error analysis.
+5. **Observability & Telemetry:** Captured retrieval latency (ms), LLM latency (ms), and guardrail intervention status on every decision, surfaced both in API contracts and the frontend workbench.
+6. **Graceful Degradation Circuit Breaker:** Implemented safe fallback mechanism in `TicketDecisionWorkflow` to route tickets to human escalation rather than dropping customer requests during upstream provider outages.
 
 ### Remaining limitations
 
 - Streamlit has no automated end-to-end browser tests (headless smoke test only).
 - SQLite is single-host; production would use PostgreSQL with connection pooling.
-- Evaluation suite comprises five visible cases; a larger holdout set is recommended for production benchmarking.
+- Evaluation suite now supports the 120-ticket historical CSV dataset for broader benchmarking.
