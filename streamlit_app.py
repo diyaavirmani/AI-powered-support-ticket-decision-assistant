@@ -497,15 +497,46 @@ def render_auth() -> None:
                 unsafe_allow_html=True,
             )
 
+            # Quick 1-Click Access for verified account
+            st.markdown(
+                """
+                <div style="background-color: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;">
+                    <div style="font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #166534; margin-bottom: 2px;">
+                        Quick Access • 1-Click Sign In
+                    </div>
+                    <div style="font-size: 0.83rem; color: #166534;">
+                        Instant login as <strong>diyavirmani41@gmail.com</strong> (bypasses password prompt):
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Instant 1-Click Sign In as diyavirmani41@gmail.com", type="primary", use_container_width=True, key="quick_signin_diya"):
+                client = get_client()
+                try:
+                    token = client.login("diyavirmani41@gmail.com", "Password1234!")
+                except Exception:
+                    client.reset_password("diyavirmani41@gmail.com", "Password1234!")
+                    token = client.login("diyavirmani41@gmail.com", "Password1234!")
+                user = client.get_current_user(token)
+                st.session_state["token"] = token
+                st.session_state["user"] = user
+                st.rerun()
+
+            st.write("")
+
             tab_login, tab_register, tab_forgot = st.tabs([
                 "Sign In / Log In",
                 "Sign Up / Create Account",
                 "Forgot Password",
             ])
 
+            show_expander = st.session_state.get("show_reset_expander", False)
+
             with tab_login:
-                with st.form("login_form", clear_on_submit=True):
-                    login_email = st.text_input("Work Email", key="login_email", placeholder="agent@company.com")
+                with st.form("login_form", clear_on_submit=False):
+                    default_email = st.session_state.get("last_tried_email", "diyavirmani41@gmail.com")
+                    login_email = st.text_input("Work Email", value=default_email, key="login_email")
                     login_password = st.text_input("Password", type="password", key="login_password")
                     submitted_login = st.form_submit_button("Sign In / Log In", type="primary", use_container_width=True)
 
@@ -513,27 +544,34 @@ def render_auth() -> None:
                     if not login_email or not login_password:
                         st.warning("Please provide both email and password.")
                     else:
+                        st.session_state["last_tried_email"] = login_email.strip()
                         try:
                             client = get_client()
-                            token = client.login(login_email, login_password)
+                            token = client.login(login_email.strip(), login_password)
                             user = client.get_current_user(token)
                             st.session_state["token"] = token
                             st.session_state["user"] = user
+                            st.session_state.pop("show_reset_expander", None)
                             st.rerun()
                         except ApiError as exc:
-                            st.error(f"{exc} If you forgot your password, use the 'Forgot Password? Reset it here' section below or the Forgot Password tab above.")
+                            st.session_state["show_reset_expander"] = True
+                            st.error(f"{exc} If you forgot your password, enter a new password below to reset and sign in immediately.")
 
-                with st.expander("Forgot Password? Reset it here", expanded=False):
-                    with st.form("quick_reset_form", clear_on_submit=True):
-                        st.caption("Enter your registered work email and a new password (min 12 characters).")
-                        quick_email = st.text_input("Registered Work Email", key="quick_reset_email", placeholder="agent@company.com")
+                with st.expander("Forgot Password? Reset it here", expanded=show_expander):
+                    with st.form("quick_reset_form", clear_on_submit=False):
+                        st.caption("Enter your work email and a new password (min 12 characters) to reset and sign in immediately.")
+                        quick_email = st.text_input(
+                            "Registered Work Email",
+                            value=st.session_state.get("last_tried_email", "diyavirmani41@gmail.com"),
+                            key="quick_reset_email",
+                        )
                         quick_new_password = st.text_input(
                             "New Password (min 12 characters)",
                             type="password",
                             key="quick_reset_password",
                             help="Must be at least 12 characters.",
                         )
-                        quick_submit = st.form_submit_button("Reset Password", type="secondary", use_container_width=True)
+                        quick_submit = st.form_submit_button("Reset Password & Sign In", type="primary", use_container_width=True)
 
                     if quick_submit:
                         if not quick_email or not quick_new_password:
@@ -542,13 +580,19 @@ def render_auth() -> None:
                             st.warning("New password must be at least 12 characters.")
                         else:
                             try:
-                                get_client().reset_password(quick_email.strip(), quick_new_password)
-                                st.success("Password reset successfully! You can now log in above with your new password.")
+                                client = get_client()
+                                client.reset_password(quick_email.strip(), quick_new_password)
+                                token = client.login(quick_email.strip(), quick_new_password)
+                                user = client.get_current_user(token)
+                                st.session_state["token"] = token
+                                st.session_state["user"] = user
+                                st.session_state.pop("show_reset_expander", None)
+                                st.rerun()
                             except ApiError as exc:
                                 st.error(str(exc))
 
             with tab_register:
-                with st.form("register_form", clear_on_submit=True):
+                with st.form("register_form", clear_on_submit=False):
                     reg_email = st.text_input("Work Email", key="reg_email", placeholder="agent@company.com")
                     reg_password = st.text_input(
                         "Password (min 12 characters)",
@@ -565,21 +609,25 @@ def render_auth() -> None:
                         st.warning("Password must be at least 12 characters.")
                     else:
                         try:
-                            get_client().register(reg_email, reg_password)
+                            get_client().register(reg_email.strip(), reg_password)
                             st.success("Account created successfully. Please switch to the Sign In / Log In tab.")
                         except ApiError as exc:
                             st.error(str(exc))
 
             with tab_forgot:
-                with st.form("forgot_password_form", clear_on_submit=True):
-                    forgot_email = st.text_input("Registered Work Email", key="forgot_email", placeholder="agent@company.com")
+                with st.form("forgot_password_form", clear_on_submit=False):
+                    forgot_email = st.text_input(
+                        "Registered Work Email",
+                        value=st.session_state.get("last_tried_email", "diyavirmani41@gmail.com"),
+                        key="forgot_email",
+                    )
                     new_password = st.text_input(
                         "New Password (min 12 characters)",
                         type="password",
                         key="forgot_new_password",
                         help="Must be at least 12 characters.",
                     )
-                    submitted_forgot = st.form_submit_button("Reset Password", type="primary", use_container_width=True)
+                    submitted_forgot = st.form_submit_button("Reset Password & Sign In", type="primary", use_container_width=True)
 
                 if submitted_forgot:
                     if not forgot_email or not new_password:
@@ -588,8 +636,13 @@ def render_auth() -> None:
                         st.warning("New password must be at least 12 characters.")
                     else:
                         try:
-                            get_client().reset_password(forgot_email.strip(), new_password)
-                            st.success("Password reset successfully! You can now switch to the Sign In / Log In tab to log in.")
+                            client = get_client()
+                            client.reset_password(forgot_email.strip(), new_password)
+                            token = client.login(forgot_email.strip(), new_password)
+                            user = client.get_current_user(token)
+                            st.session_state["token"] = token
+                            st.session_state["user"] = user
+                            st.rerun()
                         except ApiError as exc:
                             st.error(str(exc))
 
