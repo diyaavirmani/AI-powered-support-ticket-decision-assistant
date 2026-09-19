@@ -285,6 +285,119 @@ def _inject_custom_css() -> None:
             color: #0f172a;
         }
 
+        /* Explicit light styling for all input text, textareas, and labels */
+        .stTextArea textarea,
+        textarea,
+        div[data-baseweb="textarea"],
+        div[data-baseweb="textarea"] > div {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border: 1.5px solid #cbd5e1 !important;
+            border-radius: 8px !important;
+            font-size: 0.92rem !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+        }
+
+        .stTextArea textarea:focus,
+        div[data-baseweb="textarea"]:focus-within {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+        }
+
+        .stTextArea textarea::placeholder {
+            color: #94a3b8 !important;
+            -webkit-text-fill-color: #94a3b8 !important;
+        }
+
+        .stTextInput input,
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        div[data-baseweb="input"],
+        div[data-baseweb="input"] > div {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border: 1.5px solid #cbd5e1 !important;
+            border-radius: 8px !important;
+            font-size: 0.88rem !important;
+        }
+
+        .stTextInput input:focus,
+        div[data-baseweb="input"]:focus-within {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+        }
+
+        .stTextInput input::placeholder {
+            color: #94a3b8 !important;
+            -webkit-text-fill-color: #94a3b8 !important;
+        }
+
+        .stSelectbox div[data-baseweb="select"] > div {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border: 1.5px solid #cbd5e1 !important;
+            border-radius: 8px !important;
+        }
+
+        .stSelectbox div[data-baseweb="select"] * {
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+        }
+
+        label, .stWidgetLabel p, p[data-testid="stWidgetLabel"] {
+            color: #1e293b !important;
+            font-weight: 600 !important;
+            font-size: 0.84rem !important;
+        }
+
+        /* Explicit button styling: primary vs secondary */
+        .stButton > button {
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+            font-size: 0.85rem !important;
+            transition: all 0.15s ease !important;
+        }
+
+        .stButton > button[kind="secondary"],
+        .stButton > button:not([kind="primary"]) {
+            background-color: #ffffff !important;
+            color: #1e293b !important;
+            -webkit-text-fill-color: #1e293b !important;
+            border: 1.5px solid #cbd5e1 !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+        }
+
+        .stButton > button[kind="secondary"]:hover,
+        .stButton > button:not([kind="primary"]):hover {
+            background-color: #f1f5f9 !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border-color: #94a3b8 !important;
+        }
+
+        .stButton > button[kind="primary"] {
+            background-color: #4f46e5 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            border: 1.5px solid #4338ca !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+        }
+
+        .stButton > button[kind="primary"]:hover {
+            background-color: #4338ca !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
         /* Modern card surfaces and subtle elevations */
         div[data-testid="stVerticalBlockBorderWrapper"] > div {
             background-color: #ffffff;
