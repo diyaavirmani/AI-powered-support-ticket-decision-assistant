@@ -61,6 +61,16 @@ def format_issue_type(issue: str | None) -> str:
     return mapping.get(issue.lower(), issue.replace("_", " ").title())
 
 
+def format_currency(val: Any) -> str:
+    """Safely format a numeric or string currency value to INR string."""
+    if val is None or val == "":
+        return "—"
+    try:
+        return f"₹{float(val):.2f}"
+    except (ValueError, TypeError):
+        return f"₹{val}"
+
+
 def get_action_style(action: str | None) -> dict[str, str]:
     """Return deterministic visual styling for a decision action."""
     act = (action or "").upper()
@@ -1024,7 +1034,7 @@ def render_new_decision() -> None:
             # Populated facts property grid
             st.markdown('<div class="section-header"><span>Populated Order Facts</span></div>', unsafe_allow_html=True)
 
-            val_display = f"₹{draft_facts['order_value_inr']:.2f}" if draft_facts.get("order_value_inr") is not None else "— (Pending)"
+            val_display = format_currency(draft_facts.get("order_value_inr")) if draft_facts.get("order_value_inr") is not None else "— (Pending)"
             deliv_display = f"{draft_facts['days_since_delivery']} days" if draft_facts.get("days_since_delivery") is not None else "— (Pending)"
             disp_display = f"{draft_facts['days_since_dispatch']} days" if draft_facts.get("days_since_dispatch") is not None else "— (Pending)"
             pt_display = str(draft_facts.get("product_type") or "— (Pending)").capitalize()
@@ -1368,7 +1378,10 @@ def _render_copilot_decision_card(ticket: dict[str, Any]) -> None:
 
     # Confidence Metric & Linear Progress Indicator
     confidence = decision.get("confidence")
-    conf_val = float(confidence) if confidence is not None else 0.0
+    try:
+        conf_val = float(confidence) if confidence is not None else 0.0
+    except (ValueError, TypeError):
+        conf_val = 0.0
     col_c1, col_c2 = st.columns([1, 2.2])
     with col_c1:
         st.metric("Confidence", f"{conf_val * 100:.0f}%")
@@ -1404,9 +1417,15 @@ def _render_copilot_decision_card(ticket: dict[str, Any]) -> None:
 
     telemetry_chips = []
     if retrieval_ms is not None:
-        telemetry_chips.append(f'<span class="telemetry-chip">Retrieval: {retrieval_ms:.1f}ms</span>')
+        try:
+            telemetry_chips.append(f'<span class="telemetry-chip">Retrieval: {float(retrieval_ms):.1f}ms</span>')
+        except (ValueError, TypeError):
+            telemetry_chips.append(f'<span class="telemetry-chip">Retrieval: {html.escape(str(retrieval_ms))}ms</span>')
     if llm_ms is not None:
-        telemetry_chips.append(f'<span class="telemetry-chip">LLM: {llm_ms:.1f}ms</span>')
+        try:
+            telemetry_chips.append(f'<span class="telemetry-chip">LLM: {float(llm_ms):.1f}ms</span>')
+        except (ValueError, TypeError):
+            telemetry_chips.append(f'<span class="telemetry-chip">LLM: {html.escape(str(llm_ms))}ms</span>')
     if guarded:
         if raw_act:
             telemetry_chips.append(f'<span class="telemetry-chip">Guardrail: {raw_act} -&gt; {action}</span>')
@@ -1445,14 +1464,20 @@ def render_history() -> None:
             st.info("No tickets recorded yet. Submit a ticket in New Decision to view history.")
         return
 
-    options = {
-        t["id"]: (
-            f"Ticket #{t['id']} &bull; {format_action_label(t.get('decision', {}).get('action', '—'))} "
-            f"({(t.get('decision', {}).get('confidence', 0) * 100):.0f}%) &bull; "
-            f"{t.get('message', '')[:65]}..."
-        )
-        for t in tickets
-    }
+    def _make_ticket_label(t: dict[str, Any]) -> str:
+        tid = t.get("id", "?")
+        dec = t.get("decision") or {}
+        act = format_action_label(dec.get("action", "—"))
+        conf_raw = dec.get("confidence")
+        try:
+            conf_pct = f"{float(conf_raw) * 100:.0f}%" if conf_raw is not None else "0%"
+        except (ValueError, TypeError):
+            conf_pct = "0%"
+        raw_msg = (t.get("message") or "").replace("\n", " ").strip()
+        msg_snip = raw_msg[:60] + ("..." if len(raw_msg) > 60 else "")
+        return f"Ticket #{tid} • {act} ({conf_pct}) • {msg_snip}"
+
+    options = {t["id"]: _make_ticket_label(t) for t in tickets}
     ticket_ids = list(options.keys())
     labels = list(options.values())
 
@@ -1497,6 +1522,7 @@ def _render_history_ticket_workspace(ticket_id: int) -> None:
     created_at = ticket.get("created_at", "—")
     reviewed_at = decision.get("reviewed_at")
     reviews = ticket.get("reviews") or []
+    cust_code = f"USER{int(ticket_id):04d}" if str(ticket_id).isdigit() else f"USER{ticket_id}"
 
     # Top Breadcrumbs Bar matching screenshot
     st.markdown(
@@ -1542,7 +1568,7 @@ def _render_history_ticket_workspace(ticket_id: int) -> None:
 
             # Metadata properties matching screenshot
             st.markdown('<div class="section-header"><span>Ticket Metadata</span></div>', unsafe_allow_html=True)
-            order_val = f"₹{ticket['order_value_inr']:.2f}" if ticket.get("order_value_inr") is not None else "—"
+            order_val = format_currency(ticket.get("order_value_inr"))
             deliv_days = f"{ticket['days_since_delivery']} days" if ticket.get("days_since_delivery") is not None else "—"
             disp_days = f"{ticket['days_since_dispatch']} days" if ticket.get("days_since_dispatch") is not None else "—"
             p_type = str(ticket.get("product_type") or "—").capitalize()
@@ -1645,7 +1671,7 @@ def _render_history_ticket_workspace(ticket_id: int) -> None:
                 <div class="prop-grid">
                     <div class="prop-row">
                         <span class="prop-label">Customer ID</span>
-                        <span class="prop-value font-mono">#USER{ticket_id:04d}</span>
+                        <span class="prop-value font-mono">#{cust_code}</span>
                     </div>
                     <div class="prop-row">
                         <span class="prop-label">Account Tier</span>
@@ -1671,7 +1697,7 @@ def _render_history_ticket_workspace(ticket_id: int) -> None:
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <div class="avatar-circle avatar-customer">CU</div>
                         <div>
-                            <div style="font-size: 0.9rem; font-weight: 700; color: #0f172a;">Customer #USER{ticket_id:04d}</div>
+                            <div style="font-size: 0.9rem; font-weight: 700; color: #0f172a;">Customer #{cust_code}</div>
                             <div style="font-size: 0.74rem; color: #64748b;">Submitted {html.escape(str(created_at)[:19])}</div>
                         </div>
                     </div>
