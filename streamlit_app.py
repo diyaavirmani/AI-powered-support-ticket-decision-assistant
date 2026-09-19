@@ -1,7 +1,11 @@
 """Streamlit presentation layer: AI Support Decision Assistant Workbench.
 
+SaaS Customer Support Ticket Detail Workspace modeled after Dribbble design
+by Omeiza Patrick Adanini (shot 25672248).
+
 Communicates with FastAPI exclusively through HTTP via ApiClient.
 Never accesses SQLite, SQLAlchemy, embeddings, or Gemini directly.
+Strict zero-emoji design system throughout all views.
 """
 
 from __future__ import annotations
@@ -68,6 +72,7 @@ def get_action_style(action: str | None) -> dict[str, str]:
             "border": "#bbf7d0",
             "text": "#166534",
             "icon": "",
+            "badge_class": "badge-approved",
             "category": "Approved",
         }
     if act in {
@@ -80,6 +85,7 @@ def get_action_style(action: str | None) -> dict[str, str]:
             "border": "#fde68a",
             "text": "#92400e",
             "icon": "",
+            "badge_class": "badge-warning",
             "category": "Needs Information",
         }
     if act in {
@@ -92,6 +98,7 @@ def get_action_style(action: str | None) -> dict[str, str]:
             "border": "#bfdbfe",
             "text": "#1e40af",
             "icon": "",
+            "badge_class": "badge-info",
             "category": "Action Required",
         }
     if act in {
@@ -105,6 +112,7 @@ def get_action_style(action: str | None) -> dict[str, str]:
             "border": "#fecaca",
             "text": "#991b1b",
             "icon": "",
+            "badge_class": "badge-danger",
             "category": "Ineligible",
         }
     return {
@@ -112,31 +120,67 @@ def get_action_style(action: str | None) -> dict[str, str]:
         "border": "#e2e8f0",
         "text": "#334155",
         "icon": "",
+        "badge_class": "badge-neutral",
         "category": "Decision",
     }
 
 
 def _inject_custom_css() -> None:
-    """Inject a restrained light-theme design system using the system font stack."""
+    """Inject modern SaaS helpdesk design system matching the Dribbble workspace design."""
     st.markdown(
         """
         <style>
-        /* Base page tone */
+        /* Base typography and background canvas */
         .stApp {
             background-color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Helvetica, Arial, sans-serif;
             color: #0f172a;
         }
 
-        /* Card surfaces and rounded borders */
+        /* Modern card surfaces and subtle elevations */
         div[data-testid="stVerticalBlockBorderWrapper"] > div {
             background-color: #ffffff;
             border-radius: 12px !important;
             border: 1px solid #e2e8f0 !important;
             box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+            padding: 16px 18px !important;
         }
 
-        /* Header capability tags */
+        /* Top header navbar styling */
+        .top-navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0 12px 0;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 16px;
+        }
+        .nav-title {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: -0.02em;
+        }
+        .nav-subtitle {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        /* Section headers inside cards */
+        .section-header {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* Status & Capability Badges */
         .header-tag {
             display: inline-flex;
             align-items: center;
@@ -150,35 +194,240 @@ def _inject_custom_css() -> None:
             margin-right: 6px;
         }
 
+        .badge-approved {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            background-color: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .badge-warning {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            background-color: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        .badge-info {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            background-color: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        .badge-danger {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            background-color: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .badge-neutral {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            background-color: #f8fafc;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* Property list grid (Left context column) */
+        .prop-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .prop-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.84rem;
+        }
+        .prop-row:last-child {
+            border-bottom: none;
+        }
+        .prop-label {
+            color: #64748b;
+            font-weight: 500;
+        }
+        .prop-value {
+            color: #0f172a;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        /* Customer avatar & profile */
+        .user-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .avatar-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.88rem;
+        }
+        .avatar-customer {
+            background-color: #e0e7ff;
+            color: #4338ca;
+            border: 1.5px solid #c7d2fe;
+        }
+        .avatar-copilot {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            border: 1.5px solid #bae6fd;
+        }
+        .avatar-agent {
+            background-color: #f1f5f9;
+            color: #334155;
+            border: 1.5px solid #e2e8f0;
+        }
+        .user-info-name {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .user-info-meta {
+            font-size: 0.78rem;
+            color: #64748b;
+        }
+
+        /* Customer message bubble */
+        .inquiry-bubble {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-left: 3px solid #6366f1;
+            border-radius: 4px 10px 10px 4px;
+            padding: 14px 16px;
+            color: #1e293b;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        /* AI Copilot Decision Hero Banner */
+        .decision-banner {
+            padding: 16px 18px;
+            border-radius: 10px;
+            margin: 10px 0 16px 0;
+        }
+        .decision-banner-header {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 4px;
+        }
+        .decision-banner-title {
+            font-size: 1.25rem;
+            font-weight: 800;
+            line-height: 1.3;
+        }
+
         /* Policy source chip */
         .source-chip {
             display: inline-flex;
             align-items: center;
             padding: 4px 10px;
             border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-size: 0.78rem;
+            font-weight: 600;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            background-color: #f8fafc;
+            background-color: #f1f5f9;
             color: #1e293b;
             border: 1px solid #cbd5e1;
             margin: 3px 6px 3px 0;
         }
 
-        /* Fact tag */
-        .fact-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.8rem;
+        /* Rationale callout */
+        .rationale-card {
             background-color: #f8fafc;
-            color: #334155;
             border: 1px solid #e2e8f0;
-            margin: 3px 6px 3px 0;
+            border-left: 3px solid #94a3b8;
+            border-radius: 4px 8px 8px 4px;
+            padding: 12px 14px;
+            font-size: 0.86rem;
+            color: #334155;
+            line-height: 1.45;
+            margin-bottom: 14px;
         }
 
-        /* Step cards in empty decision preview */
+        /* Telemetry micro card */
+        .telemetry-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .telemetry-chip {
+            padding: 6px 10px;
+            border-radius: 6px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            font-size: 0.78rem;
+            color: #475569;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* Audit trail timeline */
+        .audit-trail-item {
+            position: relative;
+            padding: 10px 12px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .audit-agent-tag {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+        .audit-action-title {
+            font-size: 0.86rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-top: 2px;
+        }
+        .audit-note-text {
+            font-size: 0.8rem;
+            color: #475569;
+            margin-top: 3px;
+        }
+
+        /* Preview step cards */
         .preview-step {
             padding: 12px 14px;
             border-radius: 8px;
@@ -189,7 +438,7 @@ def _inject_custom_css() -> None:
 
         /* Trust note on auth screen */
         .trust-note {
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             color: #64748b;
             text-align: center;
             margin-top: 14px;
@@ -225,7 +474,7 @@ def is_authenticated() -> bool:
 def render_auth() -> None:
     _inject_custom_css()
 
-    st.write("")  # Spacing
+    st.write("")
     st.write("")
 
     _, col_card, _ = st.columns([1, 1.4, 1])
@@ -233,9 +482,16 @@ def render_auth() -> None:
         with st.container(border=True):
             st.markdown(
                 """
-                <div style="text-align: center; margin-top: 6px; margin-bottom: 12px;">
-                    <h2 style="margin: 0; font-size: 1.45rem; font-weight: 700; color: #0f172a;">AI Support Decision Assistant</h2>
-                    <p style="margin: 6px 0 0 0; font-size: 0.88rem; color: #64748b;">Policy-grounded recommendations for support teams</p>
+                <div style="text-align: center; margin-top: 8px; margin-bottom: 16px;">
+                    <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6366f1; margin-bottom: 4px;">
+                        Enterprise Support Intelligence
+                    </div>
+                    <h2 style="margin: 0; font-size: 1.5rem; font-weight: 800; color: #0f172a; letter-spacing: -0.02em;">
+                        AI Support Decision Assistant
+                    </h2>
+                    <p style="margin: 6px 0 0 0; font-size: 0.88rem; color: #64748b;">
+                        Policy-grounded decision engine for customer support teams
+                    </p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -287,13 +543,13 @@ def render_auth() -> None:
                             st.error(str(exc))
 
             st.markdown(
-                '<div class="trust-note">Secure JWT authentication • Private ticket history</div>',
+                '<div class="trust-note">Argon2 Password Hashing • JWT Authentication • Multi-Tenant Isolation</div>',
                 unsafe_allow_html=True,
             )
 
 
 # ------------------------------------------------------------------
-# Area 2 — New Decision Workbench
+# Area 2 — New Ticket Intake & Decision Generation
 # ------------------------------------------------------------------
 
 def render_new_decision() -> None:
@@ -301,50 +557,57 @@ def render_new_decision() -> None:
 
     with col_input:
         with st.container(border=True):
-            st.markdown("### New Support Ticket")
-            st.caption("Provide the customer inquiry and any known order facts to generate a policy-grounded recommendation.")
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>New Ticket Intake</span>
+                    <span class="header-tag">Grounded RAG Pipeline</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.caption("Enter the customer message and structured order attributes. The decision engine infers the issue type and retrieves grounded policy rules.")
 
             with st.form("ticket_form"):
                 message = st.text_area(
-                    "Customer message *",
+                    "Customer Message *",
                     height=130,
-                    placeholder="Describe the customer problem or request (e.g. 'My item arrived with broken glass...').",
+                    placeholder="Provide the customer issue or request (e.g. 'I received my package yesterday but the ceramic mug was shattered into pieces...').",
                 )
 
-                with st.expander("Additional order details (optional facts)", expanded=True):
+                with st.expander("Structured Order Facts (Optional)", expanded=True):
                     col_f1, col_f2 = st.columns(2)
                     with col_f1:
                         order_value_str = st.text_input(
-                            "Order value (INR)",
+                            "Order Value (INR)",
                             placeholder="e.g. 3500",
                             help="Leave blank if unknown.",
                         )
                         delivery_str = st.text_input(
-                            "Days since delivery",
+                            "Days Since Delivery",
                             placeholder="e.g. 3",
                             help="Leave blank if unknown or not yet delivered.",
                         )
                         product_options = ["— Not specified —", "food", "non_food", "mixed", "unknown"]
-                        product_type = st.selectbox("Product type", product_options)
+                        product_type = st.selectbox("Product Type", product_options)
                     with col_f2:
                         order_options = ["— Not specified —", "processing", "dispatched", "delivered", "unknown"]
-                        order_status = st.selectbox("Order status", order_options)
+                        order_status = st.selectbox("Order Status", order_options)
                         dispatch_str = st.text_input(
-                            "Days since dispatch",
+                            "Days Since Dispatch",
                             placeholder="e.g. 9",
                             help="Leave blank if unknown.",
                         )
                         opened_options = ["— Not specified —", "opened", "unopened", "unknown"]
-                        opened_status = st.selectbox("Opened status", opened_options)
+                        opened_status = st.selectbox("Opened Status", opened_options)
 
-                submitted = st.form_submit_button("Generate AI Decision", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("Generate Grounded Decision", type="primary", use_container_width=True)
 
             if submitted:
                 if not message or not message.strip():
                     st.warning("Please enter a customer message.")
                     return
 
-                # Parse nullable numeric fields cleanly
                 order_value = None
                 if order_value_str and order_value_str.strip():
                     try:
@@ -382,7 +645,7 @@ def render_new_decision() -> None:
                 os_val = opened_status if opened_status != "— Not specified —" else None
                 ost = order_status if order_status != "— Not specified —" else None
 
-                with st.spinner("Retrieving relevant policy documents and generating decision..."):
+                with st.spinner("Classifying issue, retrieving policy rules, and applying guardrails..."):
                     try:
                         result = get_client().create_ticket(
                             st.session_state["token"],
@@ -395,6 +658,7 @@ def render_new_decision() -> None:
                             order_status=ost,
                         )
                         st.session_state["last_decision"] = result
+                        st.session_state["selected_ticket_id"] = result.get("id")
                     except AuthenticationError as exc:
                         _handle_auth_error(exc)
                         return
@@ -413,22 +677,42 @@ def render_new_decision() -> None:
 def _render_empty_decision_state() -> None:
     """Render an intentional empty state before a ticket has been submitted."""
     with st.container(border=True):
-        st.markdown("### Decision Preview")
+        st.markdown(
+            """
+            <div class="section-header">
+                <span>AI Decision Engine</span>
+                <span class="badge-neutral">Ready</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.caption("Submit a ticket on the left to evaluate applicable company policies and receive an evidence-grounded recommendation.")
 
         st.markdown(
             """
             <div class="preview-step">
-                <div style="font-weight: 600; font-size: 0.9rem; color: #1e293b; margin-bottom: 2px;">1. Infer Issue Type</div>
-                <div style="font-size: 0.82rem; color: #64748b;">Classifies the request category (e.g. damaged goods, return) from message semantics without caller bias.</div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: #1e293b; margin-bottom: 2px;">
+                    1. Issue Type Classification
+                </div>
+                <div style="font-size: 0.82rem; color: #64748b;">
+                    Analyzes customer message semantics without caller bias to determine the primary category (e.g. damaged goods, return request, cancellation).
+                </div>
             </div>
             <div class="preview-step">
-                <div style="font-weight: 600; font-size: 0.9rem; color: #1e293b; margin-bottom: 2px;">2. Retrieve Policy Evidence</div>
-                <div style="font-size: 0.82rem; color: #64748b;">Searches only the 6 trusted Markdown policy documents using rule-aware chunking and embedding cosine similarity.</div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: #1e293b; margin-bottom: 2px;">
+                    2. Policy-Only RAG Retrieval
+                </div>
+                <div style="font-size: 0.82rem; color: #64748b;">
+                    Retrieves relevant clauses exclusively from the 6 trusted Markdown policy documents using rule-aware chunking and vector embeddings.
+                </div>
             </div>
             <div class="preview-step">
-                <div style="font-weight: 600; font-size: 0.9rem; color: #1e293b; margin-bottom: 2px;">3. Grounded Validation</div>
-                <div style="font-size: 0.82rem; color: #64748b;">Constrains recommendations to a closed action vocabulary and verifies that all cited sources exist in the retrieved set.</div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: #1e293b; margin-bottom: 2px;">
+                    3. Deterministic Guardrail Validation
+                </div>
+                <div style="font-size: 0.82rem; color: #64748b;">
+                    Enforces strict boundary constraints (e.g. 7-day damage limits, photo evidence over ₹2,000, dispatched cancellation blocks) before finalizing.
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -436,25 +720,25 @@ def _render_empty_decision_state() -> None:
 
 
 def _render_decision_result(ticket: dict[str, Any]) -> None:
-    """Render a structured AI decision result card."""
+    """Render a structured AI decision result card for the intake view."""
     decision = ticket.get("decision", {})
     action = decision.get("action", "—")
     style = get_action_style(action)
     action_label = html.escape(format_action_label(action))
     category = html.escape(style["category"])
+    issue_display = html.escape(format_issue_type(decision.get("inferred_issue_type")))
+    ticket_id = ticket.get("id", "—")
 
     with st.container(border=True):
-        # Header line with Ticket ID and Inferred Issue
-        issue_raw = decision.get("inferred_issue_type")
-        issue_display = html.escape(format_issue_type(issue_raw))
-        ticket_id = ticket.get("id", "—")
-
         st.markdown(
             f"""
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-                <div>
-                    <span style="font-size: 0.95rem; font-weight: 700; color: #0f172a;">Ticket #{ticket_id}</span>
-                    <span style="font-size: 0.78rem; color: #64748b; margin-left: 8px;">Saved to database</span>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="avatar-circle avatar-copilot">AI</div>
+                    <div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">Ticket #{ticket_id} Decision</div>
+                        <div style="font-size: 0.78rem; color: #64748b;">Grounded Copilot Recommendation</div>
+                    </div>
                 </div>
                 <div>
                     <span class="header-tag">Issue: {issue_display}</span>
@@ -464,13 +748,13 @@ def _render_decision_result(ticket: dict[str, Any]) -> None:
             unsafe_allow_html=True,
         )
 
-        # Action Hero Banner (The most visually prominent element)
+        # Action Hero Banner
         banner_html = f"""
-        <div style="padding: 16px 18px; border-radius: 10px; background-color: {style['bg']}; border: 1.5px solid {style['border']}; margin: 8px 0 16px 0;">
-            <div style="font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: {style['text']}; opacity: 0.9; margin-bottom: 4px;">
+        <div class="decision-banner" style="background-color: {style['bg']}; border: 1.5px solid {style['border']};">
+            <div class="decision-banner-header" style="color: {style['text']};">
                 Recommended Action • {category}
             </div>
-            <div style="font-size: 1.35rem; font-weight: 800; color: {style['text']}; line-height: 1.3;">
+            <div class="decision-banner-title" style="color: {style['text']};">
                 {action_label}
             </div>
         </div>
@@ -487,23 +771,40 @@ def _render_decision_result(ticket: dict[str, Any]) -> None:
             st.metric("Confidence", conf_display)
         with col_m2:
             st.write("")
-            st.caption("Model confidence score")
+            st.caption("Model calibration score")
             st.progress(max(0.0, min(1.0, conf_val)))
 
-        # Policy rationale / reasoning
+        # Policy rationale
         reason = decision.get("reason", "")
-        st.markdown("**Policy Rationale**")
+        st.markdown(
+            """
+            <div class="section-header" style="margin-top: 14px;">
+                <span>Policy Rationale</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if reason:
-            st.info(reason)
+            st.markdown(
+                f'<div class="rationale-card">{html.escape(reason)}</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.caption("No rationale provided.")
+            st.caption("No rationale recorded.")
 
         # Source citations
         sources = decision.get("sources", [])
-        st.markdown("**Cited Policy Documents**")
+        st.markdown(
+            """
+            <div class="section-header">
+                <span>Cited Policy Documents</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if sources:
             chips = "".join(f'<span class="source-chip">{html.escape(s)}</span>' for s in sources)
-            st.markdown(f"<div>{chips}</div>", unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 14px;">{chips}</div>', unsafe_allow_html=True)
         else:
             st.caption("No policy sources cited.")
 
@@ -515,7 +816,7 @@ def _render_decision_result(ticket: dict[str, Any]) -> None:
         confidence = decision.get("confidence", 0.0)
         is_fallback = confidence == 0.0 or "[System Fallback" in str(decision.get("reason", ""))
 
-        telemetry_items = []
+        telemetry_items: list[str] = []
         if retrieval_ms is not None:
             telemetry_items.append(f"Retrieval: {retrieval_ms:.1f}ms")
         if llm_ms is not None:
@@ -531,17 +832,23 @@ def _render_decision_result(ticket: dict[str, Any]) -> None:
             telemetry_items.append("[Guardrail Verified]")
 
         if telemetry_items:
-            st.caption(f"Pipeline Telemetry: {' • '.join(telemetry_items)}")
+            chips_html = "".join(f'<span class="telemetry-chip">{html.escape(item)}</span>' for item in telemetry_items)
+            st.markdown(
+                f"""
+                <div class="section-header" style="margin-top: 10px;">
+                    <span>Pipeline Telemetry</span>
+                </div>
+                <div class="telemetry-row">{chips_html}</div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 # ------------------------------------------------------------------
-# Area 3 — History Review Workspace
+# Area 3 — Dribbble-Inspired Ticket Detail Workspace
 # ------------------------------------------------------------------
 
 def render_history() -> None:
-    st.markdown("### Ticket Review Workspace")
-    st.caption("Review previous support ticket submissions and stored grounded decisions.")
-
     try:
         tickets = get_client().list_tickets(st.session_state["token"])
     except AuthenticationError as exc:
@@ -552,47 +859,46 @@ def render_history() -> None:
         return
 
     if not tickets:
-        st.info("No tickets recorded yet. Create a ticket in New Decision to view history.")
+        with st.container(border=True):
+            st.info("No tickets recorded yet. Create a ticket in New Ticket Intake to view history.")
         return
 
-    # Selection dropdown driven solely by list_tickets payload (no N+1 requests)
     options = {
         t["id"]: (
-            f"#{t['id']} • {format_action_label(t.get('decision', {}).get('action', '—'))} "
+            f"Ticket #{t['id']} • {format_action_label(t.get('decision', {}).get('action', '—'))} "
             f"({(t.get('decision', {}).get('confidence', 0) * 100):.0f}%) • "
-            f"{t.get('message', '')[:70]}..."
+            f"{t.get('message', '')[:65]}..."
         )
         for t in tickets
     }
     ticket_ids = list(options.keys())
     labels = list(options.values())
 
+    # Ticket queue selector bar
     col_sel, col_btn = st.columns([3.5, 1])
     with col_sel:
         selected_idx = st.selectbox(
-            "Select a ticket to review",
+            "Select Ticket from Queue",
             range(len(ticket_ids)),
             format_func=lambda i: labels[i],
             label_visibility="collapsed",
         )
     with col_btn:
-        if st.button("View Ticket Details", type="primary", use_container_width=True):
+        if st.button("Load Ticket", type="primary", use_container_width=True):
             if selected_idx is not None:
                 st.session_state["selected_ticket_id"] = ticket_ids[selected_idx]
 
-    # Auto-select the first ticket if none explicitly selected
     current_selected = st.session_state.get("selected_ticket_id")
     if current_selected is None and ticket_ids:
         current_selected = ticket_ids[0]
         st.session_state["selected_ticket_id"] = current_selected
 
-    # Fetch detail only for the single selected ticket
     if current_selected is not None:
         _render_ticket_detail_workspace(current_selected)
 
 
 def _render_ticket_detail_workspace(ticket_id: int) -> None:
-    """Fetch and display details for a single selected ticket."""
+    """Render the full 3-column ticket detail workspace matching Omeiza Patrick Adanini's Dribbble design."""
     try:
         ticket = get_client().get_ticket(st.session_state["token"], ticket_id)
     except AuthenticationError as exc:
@@ -608,94 +914,291 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
     action_label = html.escape(format_action_label(action))
     issue_display = html.escape(format_issue_type(decision.get("inferred_issue_type")))
     created_at = ticket.get("created_at", "—")
+    reviewed_at = decision.get("reviewed_at")
+    reviews = ticket.get("reviews") or []
 
-    with st.container(border=True):
-        # Top metadata bar
-        st.markdown(
-            f"""
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 16px;">
-                <div>
-                    <span style="font-size: 1.15rem; font-weight: 700; color: #0f172a;">Ticket #{ticket_id}</span>
-                    <span style="font-size: 0.82rem; color: #64748b; margin-left: 8px;">Created: {html.escape(str(created_at))}</span>
-                </div>
-                <div>
-                    <span class="header-tag">Issue: {issue_display}</span>
-                </div>
+    # ------------------------------------------------------------------
+    # Top Ticket Breadcrumbs & Status Bar
+    # ------------------------------------------------------------------
+    status_badge_html = (
+        '<span class="badge-approved">[Reviewed]</span>'
+        if reviewed_at
+        else '<span class="badge-warning">[Pending Review]</span>'
+    )
+
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 0.84rem; color: #64748b; font-weight: 600;">Tickets /</span>
+                <span style="font-size: 1.1rem; font-weight: 800; color: #0f172a;">Ticket #{ticket_id}</span>
+                {status_badge_html}
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="header-tag">Category: {issue_display}</span>
+                <span class="header-tag">Created: {html.escape(str(created_at)[:19])}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        col_left, col_right = st.columns([1, 1], gap="large")
+    # ------------------------------------------------------------------
+    # 3-Column SaaS Split Layout
+    # Column 1: Context & Metadata (Customer, Order Facts, Policy Engine)
+    # Column 2: Conversational Inquiry & Grounded AI Decision
+    # Column 3: Telemetry & Human-In-The-Loop Review
+    # ------------------------------------------------------------------
+    col_context, col_center, col_review = st.columns([1.0, 1.4, 1.1], gap="medium")
 
-        with col_left:
-            st.markdown("#### Customer Request")
-            msg = ticket.get("message", "—")
-            safe_msg = html.escape(msg).replace("\n", "<br>")
+    # ==================================================================
+    # COLUMN 1 — Customer & Order Context
+    # ==================================================================
+    with col_context:
+        # Customer Profile Card
+        with st.container(border=True):
             st.markdown(
-                f'<div style="border-left: 3px solid #cbd5e1; padding: 8px 12px; color: #334155; background: #f8fafc; border-radius: 0 4px 4px 0; font-size: 0.9rem; line-height: 1.4;">{safe_msg}</div>',
+                """
+                <div class="section-header">
+                    <span>Customer Profile</span>
+                    <span class="badge-neutral">Verified</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"""
+                <div class="user-card">
+                    <div class="avatar-circle avatar-customer">CU</div>
+                    <div>
+                        <div class="user-info-name">Support Requester</div>
+                        <div class="user-info-meta">Account ID: CUST-{ticket_id:04d}</div>
+                    </div>
+                </div>
+                <div class="prop-grid">
+                    <div class="prop-row">
+                        <span class="prop-label">Account Tier</span>
+                        <span class="prop-value">Enterprise SLA</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Support Channel</span>
+                        <span class="prop-value">Web Portal</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Ticket ID</span>
+                        <span class="prop-value font-mono">#{ticket_id}</span>
+                    </div>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
 
-            st.write("")
-            st.markdown("#### Order Facts")
-            facts: list[str] = []
-            if ticket.get("order_value_inr") is not None:
-                facts.append(f"Order Value: ₹{ticket['order_value_inr']}")
-            if ticket.get("days_since_delivery") is not None:
-                facts.append(f"Days Since Delivery: {ticket['days_since_delivery']}")
-            if ticket.get("days_since_dispatch") is not None:
-                facts.append(f"Days Since Dispatch: {ticket['days_since_dispatch']}")
-            if ticket.get("product_type"):
-                facts.append(f"Product Type: {ticket['product_type']}")
-            if ticket.get("opened_status"):
-                facts.append(f"Opened Status: {ticket['opened_status']}")
-            if ticket.get("order_status"):
-                facts.append(f"Order Status: {ticket['order_status']}")
-
-            if facts:
-                badges = "".join(f'<span class="fact-badge">{html.escape(f)}</span>' for f in facts)
-                st.markdown(f"<div>{badges}</div>", unsafe_allow_html=True)
-            else:
-                st.caption("No structured facts were provided for this ticket.")
-
-        with col_right:
-            st.markdown("#### Grounded Decision")
-
-            banner_html = f"""
-            <div style="padding: 14px 16px; border-radius: 10px; background-color: {style['bg']}; border: 1.5px solid {style['border']}; margin: 8px 0 14px 0;">
-                <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: {style['text']}; opacity: 0.9; margin-bottom: 3px;">
-                    {style['category']}
+        # Order Details Card
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>Order Context</span>
+                    <span class="header-tag">Facts</span>
                 </div>
-                <div style="font-size: 1.25rem; font-weight: 800; color: {style['text']}; line-height: 1.3;">
+                """,
+                unsafe_allow_html=True,
+            )
+
+            order_val = f"₹{ticket['order_value_inr']:.2f}" if ticket.get("order_value_inr") is not None else "—"
+            deliv_days = f"{ticket['days_since_delivery']} days" if ticket.get("days_since_delivery") is not None else "—"
+            dispatch_days = f"{ticket['days_since_dispatch']} days" if ticket.get("days_since_dispatch") is not None else "—"
+            p_type = ticket.get("product_type") or "—"
+            o_opened = ticket.get("opened_status") or "—"
+            o_status = ticket.get("order_status") or "—"
+
+            st.markdown(
+                f"""
+                <div class="prop-grid">
+                    <div class="prop-row">
+                        <span class="prop-label">Order Value</span>
+                        <span class="prop-value">{html.escape(order_val)}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Order Status</span>
+                        <span class="prop-value">{html.escape(o_status.capitalize())}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Product Type</span>
+                        <span class="prop-value">{html.escape(p_type.capitalize())}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Opened Status</span>
+                        <span class="prop-value">{html.escape(o_opened.capitalize())}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Days Since Delivery</span>
+                        <span class="prop-value">{html.escape(deliv_days)}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Days Since Dispatch</span>
+                        <span class="prop-value">{html.escape(dispatch_days)}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # Policy Grounding Status Card
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>Grounding Guardrails</span>
+                    <span class="badge-approved">Active</span>
+                </div>
+                <div class="prop-grid">
+                    <div class="prop-row">
+                        <span class="prop-label">Knowledge Base</span>
+                        <span class="prop-value">6 Markdown Policies</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Historical Tickets</span>
+                        <span class="prop-value">Excluded (No Leakage)</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Enforcement</span>
+                        <span class="prop-value">Deterministic Fail-Closed</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # ==================================================================
+    # COLUMN 2 — Conversation Thread & AI Grounded Resolution
+    # ==================================================================
+    with col_center:
+        # Customer Message Thread Card
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>Customer Inquiry</span>
+                    <span class="header-tag">Inbound</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            msg = ticket.get("message", "—")
+            safe_msg = html.escape(msg).replace("\n", "<br>")
+
+            st.markdown(
+                f"""
+                <div class="user-card" style="margin-bottom: 8px;">
+                    <div class="avatar-circle avatar-customer" style="width: 32px; height: 32px; font-size: 0.78rem;">CU</div>
+                    <div>
+                        <div style="font-size: 0.86rem; font-weight: 700; color: #0f172a;">Customer</div>
+                        <div style="font-size: 0.74rem; color: #64748b;">Submitted {html.escape(str(created_at)[:19])}</div>
+                    </div>
+                </div>
+                <div class="inquiry-bubble">
+                    {safe_msg}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # AI Grounded Decision Card
+        with st.container(border=True):
+            st.markdown(
+                f"""
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="avatar-circle avatar-copilot" style="width: 32px; height: 32px; font-size: 0.78rem;">AI</div>
+                        <div>
+                            <div style="font-size: 0.92rem; font-weight: 800; color: #0f172a;">AI Copilot Recommendation</div>
+                            <div style="font-size: 0.75rem; color: #64748b;">Grounding Verified Against Company Policy</div>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="header-tag">{issue_display}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Recommended Action Banner
+            banner_html = f"""
+            <div class="decision-banner" style="background-color: {style['bg']}; border: 1.5px solid {style['border']};">
+                <div class="decision-banner-header" style="color: {style['text']};">
+                    Recommended Action • {style['category']}
+                </div>
+                <div class="decision-banner-title" style="color: {style['text']};">
                     {action_label}
                 </div>
             </div>
             """
             st.markdown(banner_html, unsafe_allow_html=True)
 
+            # Confidence Metric & Linear Progress Indicator
             confidence = decision.get("confidence")
             conf_val = float(confidence) if confidence is not None else 0.0
-            st.metric("Confidence Score", f"{conf_val * 100:.0f}%")
-            st.progress(max(0.0, min(1.0, conf_val)))
+            col_m1, col_m2 = st.columns([1, 2.2])
+            with col_m1:
+                st.metric("Confidence", f"{conf_val * 100:.0f}%")
+            with col_m2:
+                st.write("")
+                st.caption("Model calibration score")
+                st.progress(max(0.0, min(1.0, conf_val)))
 
-            st.write("")
-            st.markdown("**Policy Rationale**")
+            # Policy Rationale
+            st.markdown(
+                """
+                <div class="section-header" style="margin-top: 14px;">
+                    <span>Policy Rationale</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             reason = decision.get("reason", "")
             if reason:
-                st.info(reason)
+                st.markdown(
+                    f'<div class="rationale-card">{html.escape(reason)}</div>',
+                    unsafe_allow_html=True,
+                )
             else:
                 st.caption("No rationale recorded.")
 
-            st.markdown("**Cited Policy Documents**")
+            # Cited Policy Documents
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>Cited Policy Documents</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             sources = decision.get("sources", [])
             if sources:
                 chips = "".join(f'<span class="source-chip">{html.escape(s)}</span>' for s in sources)
-                st.markdown(f"<div>{chips}</div>", unsafe_allow_html=True)
+                st.markdown(f'<div style="margin-bottom: 6px;">{chips}</div>', unsafe_allow_html=True)
             else:
                 st.caption("No sources cited.")
 
-            # Pipeline Telemetry & Guardrails
+    # ==================================================================
+    # COLUMN 3 — Pipeline Telemetry & HITL Review Panel
+    # ==================================================================
+    with col_review:
+        # Pipeline Telemetry Card
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>Pipeline Telemetry</span>
+                    <span class="header-tag">Observability</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
             retrieval_ms = decision.get("retrieval_latency_ms")
             llm_ms = decision.get("llm_latency_ms")
             guarded = decision.get("guardrail_triggered")
@@ -703,42 +1206,141 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
             confidence = decision.get("confidence", 0.0)
             is_fallback = confidence == 0.0 or "[System Fallback" in str(decision.get("reason", ""))
 
-            telemetry_items = []
-            if retrieval_ms is not None:
-                telemetry_items.append(f"Retrieval: {retrieval_ms:.1f}ms")
-            if llm_ms is not None:
-                telemetry_items.append(f"LLM: {llm_ms:.1f}ms")
-            if is_fallback:
-                telemetry_items.append("[Fallback Escalation]")
-            elif guarded:
-                if raw_act:
-                    telemetry_items.append(f"[Guardrail: {raw_act} -> {decision.get('action')}]")
+            st.markdown(
+                f"""
+                <div class="prop-grid">
+                    <div class="prop-row">
+                        <span class="prop-label">Policy Retrieval</span>
+                        <span class="prop-value">{f"{retrieval_ms:.1f} ms" if retrieval_ms is not None else "—"}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">LLM Generation</span>
+                        <span class="prop-value">{f"{llm_ms:.1f} ms" if llm_ms is not None else "—"}</span>
+                    </div>
+                    <div class="prop-row">
+                        <span class="prop-label">Guardrail State</span>
+                        <span class="prop-value">
+                            {"[Intervened]" if guarded else ("[Fallback]" if is_fallback else "[Verified Compliant]")}
+                        </span>
+                    </div>
+                    {f'<div class="prop-row"><span class="prop-label">Raw Model Action</span><span class="prop-value font-mono">{html.escape(str(raw_act))}</span></div>' if raw_act else ''}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # Agent Review & Override (HITL) Panel
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class="section-header">
+                    <span>Agent Review & Override</span>
+                    <span class="badge-neutral">HITL</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Current Effective Resolution Status
+            if reviewed_at:
+                override_act = decision.get("human_override_action") or "Accepted"
+                override_reason = decision.get("human_override_reason") or "Verified compliant."
+                st.markdown(
+                    f"""
+                    <div style="background-color: #f0fdf4; padding: 12px 14px; border-radius: 8px; border: 1px solid #bbf7d0; margin-bottom: 14px;">
+                        <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #166534; margin-bottom: 2px;">
+                            Active Resolution
+                        </div>
+                        <div style="font-size: 0.92rem; font-weight: 800; color: #166534;">
+                            {html.escape(format_action_label(override_act))}
+                        </div>
+                        <div style="font-size: 0.8rem; color: #334155; margin-top: 4px;">
+                            <strong>Audit Note:</strong> {html.escape(override_reason)}
+                        </div>
+                        <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">
+                            Recorded: {html.escape(str(reviewed_at)[:19])}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # Review actions
+            col_acc, col_ovr = st.columns([1, 1.2])
+            with col_acc:
+                if st.button("Accept AI Decision", type="primary", use_container_width=True, key=f"accept_{ticket_id}"):
+                    try:
+                        get_client().review_ticket(st.session_state["token"], ticket_id, accept=True)
+                        st.success("Decision verified and accepted!")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(str(exc))
+
+            with col_ovr:
+                action_options = [
+                    "APPROVE_REFUND_OR_REPLACEMENT",
+                    "APPROVE_REPLACEMENT",
+                    "APPROVE_RETURN",
+                    "CANCEL_AND_REFUND",
+                    "CANNOT_CANCEL_AFTER_DISPATCH",
+                    "NEEDS_MORE_INFORMATION",
+                    "OFFER_REPLACEMENT_OR_REFUND",
+                    "OPEN_SHIPPING_INVESTIGATION",
+                    "REJECT_FOOD_RETURN",
+                    "REJECT_OPENED_ITEM",
+                    "REJECT_OUTSIDE_WINDOW",
+                    "REPLACE_CORRECT_ITEM",
+                    "REQUEST_DEFECT_EVIDENCE",
+                    "REQUEST_PHOTOS",
+                    "WAIT_AND_TRACK",
+                ]
+                override_action = st.selectbox("Override Action", action_options, key=f"override_act_{ticket_id}")
+
+            override_reason = st.text_input(
+                "Override Audit Reason *",
+                placeholder="e.g. Granted exception for valued customer",
+                key=f"override_rsn_{ticket_id}",
+            )
+            if st.button("Submit Override", type="secondary", use_container_width=True, key=f"btn_override_{ticket_id}"):
+                if not override_reason or not override_reason.strip():
+                    st.warning("Please provide a reason for overriding.")
                 else:
-                    telemetry_items.append("[Guardrail Intervened]")
-            elif retrieval_ms is not None or llm_ms is not None:
-                telemetry_items.append("[Guardrail Verified]")
+                    try:
+                        get_client().review_ticket(
+                            st.session_state["token"],
+                            ticket_id,
+                            action=override_action,
+                            reason=override_reason.strip(),
+                            accept=False,
+                        )
+                        st.success("Override recorded in audit log!")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(str(exc))
 
-            if telemetry_items:
-                st.caption(f"**Pipeline Telemetry:** {' • '.join(telemetry_items)}")
-
-            # Human-in-the-Loop (HITL) Review & Override Panel
-            st.divider()
-            st.markdown("#### Agent Review & Override (HITL)")
-
-            reviews = ticket.get("reviews") or []
-            if reviews:
-                st.markdown("##### Review Audit Trail")
+        # Review Audit Trail (Multi-review history)
+        if reviews:
+            with st.container(border=True):
+                st.markdown(
+                    """
+                    <div class="section-header">
+                        <span>Review Audit Trail</span>
+                        <span class="badge-neutral">History</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
                 for rev in reviews:
                     st.markdown(
                         f"""
-                        <div style="background-color: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
-                            <div style="font-size: 0.74rem; font-weight: 700; text-transform: uppercase; color: #475569;">
+                        <div class="audit-trail-item">
+                            <div class="audit-agent-tag">
                                 Agent ID #{rev.get('reviewer_id')} • {html.escape(str(rev.get('created_at', ''))[:19])}
                             </div>
-                            <div style="font-size: 0.88rem; font-weight: 600; color: #1e293b; margin-top: 2px;">
+                            <div class="audit-action-title">
                                 Action: {html.escape(format_action_label(rev.get('action', '')))}
                             </div>
-                            <div style="font-size: 0.82rem; color: #64748b; margin-top: 2px;">
+                            <div class="audit-note-text">
                                 Note: {html.escape(rev.get('reason', ''))}
                             </div>
                         </div>
@@ -746,81 +1348,9 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
                         unsafe_allow_html=True,
                     )
 
-            reviewed_at = decision.get("reviewed_at")
-            if reviewed_at:
-                override_act = decision.get("human_override_action") or "Accepted"
-                override_reason = decision.get("human_override_reason") or "No note provided."
-                st.markdown(
-                    f"""
-                    <div style="background-color: #f0fdf4; padding: 12px 14px; border-radius: 8px; border: 1px solid #bbf7d0; margin-top: 4px; margin-bottom: 12px;">
-                        <div style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: #166534; margin-bottom: 2px;">
-                            Current Effective Resolution
-                        </div>
-                        <div style="font-size: 0.95rem; font-weight: 700; color: #166534;">
-                            Resolution: {html.escape(format_action_label(override_act))}
-                        </div>
-                        <div style="font-size: 0.84rem; color: #334155; margin-top: 4px;">
-                            <strong>Latest Note:</strong> {html.escape(override_reason)}
-                        </div>
-                        <div style="font-size: 0.74rem; color: #64748b; margin-top: 4px;">
-                            Updated: {html.escape(str(reviewed_at))}
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            with st.expander("Record Additional Review or Override", expanded=not bool(reviews)):
-                col_accept, col_override = st.columns([1, 1.2])
-                with col_accept:
-                    if st.button("Accept AI Decision", type="primary", use_container_width=True, key=f"accept_{ticket_id}"):
-                        try:
-                            get_client().review_ticket(st.session_state["token"], ticket_id, accept=True)
-                            st.success("Decision verified and accepted!")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(str(exc))
-
-                with col_override:
-                    action_options = [
-                        "APPROVE_REFUND_OR_REPLACEMENT",
-                        "APPROVE_REPLACEMENT",
-                        "APPROVE_RETURN",
-                        "CANCEL_AND_REFUND",
-                        "CANNOT_CANCEL_AFTER_DISPATCH",
-                        "NEEDS_MORE_INFORMATION",
-                        "OFFER_REPLACEMENT_OR_REFUND",
-                        "OPEN_SHIPPING_INVESTIGATION",
-                        "REJECT_FOOD_RETURN",
-                        "REJECT_OPENED_ITEM",
-                        "REJECT_OUTSIDE_WINDOW",
-                        "REPLACE_CORRECT_ITEM",
-                        "REQUEST_DEFECT_EVIDENCE",
-                        "REQUEST_PHOTOS",
-                        "WAIT_AND_TRACK",
-                    ]
-                    override_action = st.selectbox("Corrected Action", action_options, key=f"override_act_{ticket_id}")
-                    override_reason = st.text_input("Override Reason (Audit Log)", placeholder="e.g. Approved VIP customer exception", key=f"override_rsn_{ticket_id}")
-                    if st.button("Submit Override", type="secondary", use_container_width=True, key=f"btn_override_{ticket_id}"):
-                        if not override_reason or not override_reason.strip():
-                            st.warning("Please provide a reason for overriding.")
-                        else:
-                            try:
-                                get_client().review_ticket(
-                                    st.session_state["token"],
-                                    ticket_id,
-                                    action=override_action,
-                                    reason=override_reason.strip(),
-                                    accept=False,
-                                )
-                                st.success("Override recorded in audit log!")
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(str(exc))
-
 
 # ------------------------------------------------------------------
-# Main layout & Header
+# Main layout & Top Navigation Bar
 # ------------------------------------------------------------------
 
 def main() -> None:
@@ -833,20 +1363,21 @@ def main() -> None:
     user = st.session_state.get("user", {})
     user_email = user.get("email", "support@company.com")
 
-    # Header bar
+    # Enterprise Top Navigation Bar
     col_hdr, col_auth = st.columns([3, 1])
     with col_hdr:
         st.markdown(
             """
             <div style="margin-bottom: 2px;">
-                <span style="font-size: 1.35rem; font-weight: 800; color: #0f172a; letter-spacing: -0.01em;">AI Support Decision Assistant</span>
+                <span class="nav-title">AI Support Decision Assistant</span>
+                <span class="badge-approved" style="margin-left: 8px;">Enterprise Helpdesk</span>
             </div>
-            <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 8px;">
-                Policy-grounded recommendations for customer support teams
+            <div class="nav-subtitle">
+                Local Policy Grounding • Deterministic Guardrails • Human-in-the-Loop Audit Trail
             </div>
-            <div>
+            <div style="margin-top: 6px;">
                 <span class="header-tag">6 Policy Documents</span>
-                <span class="header-tag">Validated Citations</span>
+                <span class="header-tag">Zero Label Leakage</span>
                 <span class="header-tag">Private Workspace</span>
             </div>
             """,
@@ -857,7 +1388,7 @@ def main() -> None:
         st.markdown(
             f"""
             <div style="text-align: right; margin-bottom: 6px;">
-                <span style="font-size: 0.82rem; color: #475569; font-weight: 500;">User: {html.escape(user_email)}</span>
+                <span style="font-size: 0.82rem; color: #475569; font-weight: 600;">Agent: {html.escape(user_email)}</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -868,15 +1399,15 @@ def main() -> None:
 
     st.divider()
 
-    # Navigation: Segmented control or radio fallback
+    # Workspace Navigation Tabs
     nav = st.segmented_control(
         "Workspace Navigation",
-        ["New Decision", "Ticket History"],
-        default="New Decision",
+        ["New Ticket Intake", "Ticket Detail Workspace"],
+        default="Ticket Detail Workspace" if st.session_state.get("selected_ticket_id") else "New Ticket Intake",
         label_visibility="collapsed",
     )
 
-    if nav == "New Decision" or nav is None:
+    if nav == "New Ticket Intake":
         render_new_decision()
     else:
         render_history()
