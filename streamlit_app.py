@@ -497,13 +497,17 @@ def render_auth() -> None:
                 unsafe_allow_html=True,
             )
 
-            tab_login, tab_register = st.tabs(["Sign In", "Create Account"])
+            tab_login, tab_register, tab_forgot = st.tabs([
+                "Sign In / Log In",
+                "Sign Up / Create Account",
+                "Forgot Password",
+            ])
 
             with tab_login:
                 with st.form("login_form", clear_on_submit=True):
                     login_email = st.text_input("Work Email", key="login_email", placeholder="agent@company.com")
                     login_password = st.text_input("Password", type="password", key="login_password")
-                    submitted_login = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+                    submitted_login = st.form_submit_button("Sign In / Log In", type="primary", use_container_width=True)
 
                 if submitted_login:
                     if not login_email or not login_password:
@@ -528,7 +532,7 @@ def render_auth() -> None:
                         key="reg_password",
                         help="Must be at least 12 characters.",
                     )
-                    submitted_reg = st.form_submit_button("Create Account", use_container_width=True)
+                    submitted_reg = st.form_submit_button("Sign Up / Create Account", use_container_width=True)
 
                 if submitted_reg:
                     if not reg_email or not reg_password:
@@ -538,7 +542,30 @@ def render_auth() -> None:
                     else:
                         try:
                             get_client().register(reg_email, reg_password)
-                            st.success("Account created successfully. Please switch to the Sign In tab.")
+                            st.success("Account created successfully. Please switch to the Sign In / Log In tab.")
+                        except ApiError as exc:
+                            st.error(str(exc))
+
+            with tab_forgot:
+                with st.form("forgot_password_form", clear_on_submit=True):
+                    forgot_email = st.text_input("Registered Work Email", key="forgot_email", placeholder="agent@company.com")
+                    new_password = st.text_input(
+                        "New Password (min 12 characters)",
+                        type="password",
+                        key="forgot_new_password",
+                        help="Must be at least 12 characters.",
+                    )
+                    submitted_forgot = st.form_submit_button("Reset Password", type="primary", use_container_width=True)
+
+                if submitted_forgot:
+                    if not forgot_email or not new_password:
+                        st.warning("Please provide both email and new password.")
+                    elif len(new_password) < 12:
+                        st.warning("New password must be at least 12 characters.")
+                    else:
+                        try:
+                            get_client().reset_password(forgot_email.strip(), new_password)
+                            st.success("Password reset successfully! You can now switch to the Sign In / Log In tab to log in.")
                         except ApiError as exc:
                             st.error(str(exc))
 
@@ -1393,7 +1420,7 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Sign Out", type="secondary", use_container_width=True):
+        if st.button("Sign Out / Log Out", type="secondary", use_container_width=True):
             _clear_session()
             st.rerun()
 

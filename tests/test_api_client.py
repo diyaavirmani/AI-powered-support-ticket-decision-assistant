@@ -354,3 +354,20 @@ class TestStreamlitImport:
             "action": "APPROVE_RETURN",
             "reason": "VIP override",
         }
+
+    def test_reset_password_request(self):
+        resp = _mock_response(200, {"message": "Password reset successfully"})
+        client, mock_req = _patched_client(resp)
+        with patch("src.api_client.httpx.Client") as mock_cls:
+            _apply_mock(mock_req)
+            mock_cls.return_value.__enter__.return_value.request = mock_req
+            res = client.reset_password("agent@company.com", "NewPassword123!")
+
+        assert res["message"] == "Password reset successfully"
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1] == "http://testapi:8000/reset-password"
+        assert call_args[1]["json"] == {
+            "email": "agent@company.com",
+            "new_password": "NewPassword123!",
+        }

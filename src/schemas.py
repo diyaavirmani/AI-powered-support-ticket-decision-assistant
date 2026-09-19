@@ -29,6 +29,10 @@ class LoginRequest(EmailRequest):
     password: SecretStr = Field(min_length=1, max_length=128)
 
 
+class ResetPasswordRequest(EmailRequest):
+    new_password: SecretStr = Field(min_length=12, max_length=128)
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

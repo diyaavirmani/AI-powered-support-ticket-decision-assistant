@@ -165,6 +165,14 @@ class ApiClient:
             raise ApiError("Login succeeded but no token was returned.")
         return token
 
+    def reset_password(self, email: str, new_password: str) -> dict[str, Any]:
+        """Reset a user's password."""
+        return self._request(
+            "POST",
+            "/reset-password",
+            json_body={"email": email, "new_password": new_password},
+        )
+
     def get_current_user(self, token: str) -> dict[str, Any]:
         return self._request("GET", "/me", token=token)
 

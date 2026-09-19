@@ -189,3 +189,48 @@ def test_invalid_request_body_is_rejected(client: TestClient) -> None:
     response = client.post("/login", content="not-json", headers={"Content-Type": "application/json"})
 
     assert response.status_code == 422
+
+
+def test_reset_password_updates_hash_and_allows_login(client: TestClient) -> None:
+    register_user(client)
+
+    new_password = "brand-new-secure-password-123"
+    reset_resp = client.post(
+        "/reset-password",
+        json={"email": "alice.example@example.com", "new_password": new_password},
+    )
+    assert reset_resp.status_code == 200
+    assert reset_resp.json() == {"message": "Password reset successfully"}
+
+    # Old password fails
+    old_login = client.post(
+        "/login",
+        json={"email": "alice.example@example.com", "password": REGISTER_PAYLOAD["password"]},
+    )
+    assert old_login.status_code == 401
+
+    # New password succeeds
+    new_login = client.post(
+        "/login",
+        json={"email": "alice.example@example.com", "password": new_password},
+    )
+    assert new_login.status_code == 200
+    assert "access_token" in new_login.json()
+
+
+def test_reset_password_fails_for_unknown_user(client: TestClient) -> None:
+    resp = client.post(
+        "/reset-password",
+        json={"email": "unknown@example.com", "new_password": "brand-new-secure-password-123"},
+    )
+    assert resp.status_code == 404
+    assert "No user found" in resp.json()["detail"]
+
+
+def test_reset_password_enforces_minimum_length(client: TestClient) -> None:
+    register_user(client)
+    resp = client.post(
+        "/reset-password",
+        json={"email": "alice.example@example.com", "new_password": "short"},
+    )
+    assert resp.status_code == 422

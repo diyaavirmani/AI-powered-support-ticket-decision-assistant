@@ -33,6 +33,7 @@ from src.schemas import (
     DecisionDraft,
     LoginRequest,
     RegistrationRequest,
+    ResetPasswordRequest,
     ReviewRequest,
     TicketRequest,
     TicketResponse,
@@ -113,6 +114,23 @@ def login(
 
     logger.info("User %d logged in successfully", user.id)
     return TokenResponse(access_token=create_access_token(user.id))
+
+
+@app.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, str]:
+    user = db.scalar(select(User).where(User.email == str(request.email)))
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No user found with this email address",
+        )
+    user.password_hash = hash_password(request.new_password.get_secret_value())
+    db.commit()
+    logger.info("Password reset successfully for user %d (%s)", user.id, user.email)
+    return {"message": "Password reset successfully"}
 
 
 @app.get("/me", response_model=UserResponse)
