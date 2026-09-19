@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -20,6 +20,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32), default="agent", server_default="agent")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -44,6 +45,7 @@ class Ticket(Base):
             "days_since_dispatch IS NULL OR days_since_dispatch >= 0",
             name="ck_tickets_dispatch_days_nonnegative",
         ),
+        Index("ix_tickets_user_created_id", "user_id", "created_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -67,6 +69,9 @@ class Ticket(Base):
     decision: Mapped[Optional["Decision"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan", uselist=False
     )
+    reviews: Mapped[List["TicketReview"]] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan", order_by="TicketReview.id.asc()"
+    )
 
 
 class Decision(Base):
@@ -83,6 +88,7 @@ class Decision(Base):
         ForeignKey("tickets.id", ondelete="CASCADE"), unique=True
     )
     action: Mapped[str] = mapped_column(String(64))
+    raw_action: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     inferred_issue_type: Mapped[str] = mapped_column(String(32))
     reason: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float)
@@ -100,3 +106,23 @@ class Decision(Base):
     )
 
     ticket: Mapped[Ticket] = relationship(back_populates="decision")
+
+
+class TicketReview(Base):
+    __tablename__ = "ticket_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), index=True
+    )
+    reviewer_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    ticket: Mapped[Ticket] = relationship(back_populates="reviews")
+    reviewer: Mapped[User] = relationship()

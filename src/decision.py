@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any, Protocol, Sequence
 
@@ -22,18 +23,20 @@ from src.retrieval import (
 )
 from src.schemas import Action, DecisionDraft, IssueType, TicketRequest
 
+logger = logging.getLogger("support_assistant.decision")
+
 
 class DecisionError(Exception):
     """Base class for controlled decision pipeline failures."""
 
 
 class DecisionValidationError(DecisionError):
-    pass
+    """The provider returned an invalid, unparseable, or hallucinated schema."""
 
 
 class DecisionGenerator(Protocol):
     def generate(self, prompt: str, response_schema: dict[str, Any]) -> object:
-        """Return the provider's decoded JSON response."""
+        """Return a structured dictionary matching response_schema."""
 
 
 class Retriever(Protocol):
@@ -54,7 +57,10 @@ class GeminiDecisionGenerator:
         api_key = self.settings.gemini_api_key.get_secret_value()
         if not api_key:
             raise ProviderConfigurationError("Gemini decision configuration is missing")
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=30.0),
+        )
 
     def generate(self, prompt: str, response_schema: dict[str, Any]) -> object:
         try:
@@ -161,18 +167,31 @@ class TicketDecisionWorkflow:
 
                 decision = DecisionDraft.model_validate(raw_decision)
                 if not set(decision.sources).issubset(allowed_sources):
+                    logger.warning("Decision cited unretrieved sources: %s vs %s", decision.sources, allowed_sources)
                     raise DecisionValidationError("decision cites an unretrieved policy")
 
                 # Attach telemetry
                 decision.retrieval_latency_ms = round(retrieval_ms, 2) if retrieval_ms is not None else None
                 decision.llm_latency_ms = round(llm_ms, 2)
 
+                logger.info(
+                    "Decision generated in %.2fms (retrieval: %.2fms): raw_action=%s, issue_type=%s",
+                    llm_ms,
+                    retrieval_ms or 0.0,
+                    decision.action,
+                    decision.inferred_issue_type,
+                )
+
                 # Apply deterministic policy guardrails (Anti-Hallucination Firewall)
-                guarded_decision, _ = enforce_policy_guardrails(ticket, decision)
+                guarded_decision, interventions = enforce_policy_guardrails(ticket, decision)
+                if interventions:
+                    logger.info("Guardrail intervened: final_action=%s, reasons=%s", guarded_decision.action, interventions)
                 return guarded_decision
             except (ValidationError, DecisionValidationError) as exc:
+                logger.warning("Decision validation error on attempt %d: %s", attempt + 1, exc)
                 if attempt == 1:
                     if self.enable_fallback:
+                        logger.warning("Routing to fallback after repeated validation failure")
                         return self._create_fallback_decision(
                             ticket,
                             retrieved_chunks=retrieved_chunks,
@@ -180,8 +199,10 @@ class TicketDecisionWorkflow:
                             reason="AI decision model output failed strict validation.",
                         )
                     raise DecisionValidationError("Gemini decision validation failed") from exc
-            except ProviderServiceError:
+            except ProviderServiceError as exc:
+                logger.error("Provider service error during decision generation: %s", exc)
                 if self.enable_fallback:
+                    logger.warning("Routing to fallback after provider service error")
                     return self._create_fallback_decision(
                         ticket,
                         retrieved_chunks=retrieved_chunks,
@@ -209,6 +230,8 @@ class TicketDecisionWorkflow:
             retrieval_latency_ms=round(retrieval_ms, 2) if retrieval_ms is not None else None,
             llm_latency_ms=None,
             guardrail_triggered=False,
+            raw_action=None,
+            raw_reason=None,
         )
 
 
@@ -219,13 +242,24 @@ class LazyProductionDecisionWorkflow:
         return get_ticket_workflow().decide(ticket)
 
 
-def get_ticket_workflow() -> TicketDecisionWorkflow:
-    """FastAPI dependency factory; tests override this narrow seam with fakes."""
+_WORKFLOW_SINGLETON: TicketDecisionWorkflow | None = None
 
-    settings = get_settings()
-    retriever = PolicyRetriever(GeminiEmbedder(settings), settings=settings)
-    return TicketDecisionWorkflow(
-        retriever,
-        GeminiDecisionGenerator(settings),
-        enable_fallback=settings.enable_ai_fallback,
-    )
+
+def get_ticket_workflow() -> TicketDecisionWorkflow:
+    """FastAPI dependency factory; caches singleton workflow to avoid per-request index reloads."""
+    global _WORKFLOW_SINGLETON
+    if _WORKFLOW_SINGLETON is None:
+        settings = get_settings()
+        retriever = PolicyRetriever(GeminiEmbedder(settings), settings=settings)
+        _WORKFLOW_SINGLETON = TicketDecisionWorkflow(
+            retriever,
+            GeminiDecisionGenerator(settings),
+            enable_fallback=settings.enable_ai_fallback,
+        )
+    return _WORKFLOW_SINGLETON
+
+
+def reset_workflow_singleton() -> None:
+    """Clear cached workflow singleton (useful for isolated tests)."""
+    global _WORKFLOW_SINGLETON
+    _WORKFLOW_SINGLETON = None

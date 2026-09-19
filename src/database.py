@@ -41,6 +41,8 @@ def init_db() -> None:
         with engine.connect() as conn:
             cursor = conn.execute(text("PRAGMA table_info(decisions)"))
             columns = {row[1] for row in cursor.fetchall()}
+            if "raw_action" not in columns:
+                conn.execute(text("ALTER TABLE decisions ADD COLUMN raw_action VARCHAR(64)"))
             if "retrieval_latency_ms" not in columns:
                 conn.execute(text("ALTER TABLE decisions ADD COLUMN retrieval_latency_ms FLOAT"))
             if "llm_latency_ms" not in columns:
@@ -53,6 +55,13 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE decisions ADD COLUMN human_override_reason TEXT"))
             if "reviewed_at" not in columns:
                 conn.execute(text("ALTER TABLE decisions ADD COLUMN reviewed_at DATETIME"))
+
+            # Users table auto-migration
+            user_cursor = conn.execute(text("PRAGMA table_info(users)"))
+            user_columns = {row[1] for row in user_cursor.fetchall()}
+            if "role" not in user_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(32) DEFAULT 'agent' NOT NULL"))
+
             conn.commit()
 
 

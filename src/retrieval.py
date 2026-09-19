@@ -83,7 +83,10 @@ class GeminiEmbedder:
         api_key = self.settings.gemini_api_key.get_secret_value()
         if not api_key:
             raise ProviderConfigurationError("Gemini embedding configuration is missing")
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=30.0),
+        )
 
     def document_embeddings(self, texts: Sequence[str]) -> np.ndarray:
         return self._embed(list(texts), "RETRIEVAL_DOCUMENT")

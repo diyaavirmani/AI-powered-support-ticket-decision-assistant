@@ -11,11 +11,11 @@ from src.models import User
 
 def test_required_tables_columns_and_constraints_exist(db_session: Session) -> None:
     inspector = inspect(engine)
-    assert set(inspector.get_table_names()) == {"users", "tickets", "decisions"}
+    assert set(inspector.get_table_names()) == {"users", "tickets", "decisions", "ticket_reviews"}
 
     raw_user_columns = inspector.get_columns("users")
     user_columns = {column["name"] for column in raw_user_columns}
-    assert user_columns == {"id", "email", "password_hash", "created_at"}
+    assert user_columns == {"id", "email", "password_hash", "role", "created_at"}
     assert all(not column["nullable"] for column in raw_user_columns)
 
     raw_ticket_columns = inspector.get_columns("tickets")
@@ -57,6 +57,7 @@ def test_required_tables_columns_and_constraints_exist(db_session: Session) -> N
         "id",
         "ticket_id",
         "action",
+        "raw_action",
         "inferred_issue_type",
         "reason",
         "confidence",
@@ -88,6 +89,7 @@ def test_required_tables_columns_and_constraints_exist(db_session: Session) -> N
     assert all(
         decision_nullability[name]
         for name in (
+            "raw_action",
             "retrieval_latency_ms",
             "llm_latency_ms",
             "guardrail_triggered",
@@ -96,6 +98,10 @@ def test_required_tables_columns_and_constraints_exist(db_session: Session) -> N
             "reviewed_at",
         )
     )
+
+    raw_review_columns = inspector.get_columns("ticket_reviews")
+    review_columns = {column["name"] for column in raw_review_columns}
+    assert review_columns == {"id", "ticket_id", "reviewer_id", "action", "reason", "created_at"}
 
     email_indexes = inspector.get_indexes("users")
     assert any(

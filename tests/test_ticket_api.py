@@ -195,3 +195,61 @@ def test_missing_production_gemini_configuration_is_a_clear_503(client: TestClie
 
     assert response.status_code == 503
     assert response.json() == {"detail": "AI decision service is not configured"}
+
+
+def test_raw_action_persisted_in_database(
+    client: TestClient, db_session: Session
+) -> None:
+    from src.models import Decision
+    workflow = FakeWorkflow(
+        decision=DecisionDraft(
+            action="REQUEST_PHOTOS",
+            raw_action="APPROVE_REFUND_OR_REPLACEMENT",
+            raw_reason="LLM draft approval",
+            confidence=0.88,
+            reason="Photos required by policy.",
+            sources=["damaged_goods.md"],
+            inferred_issue_type="damaged",
+            guardrail_triggered=True,
+        )
+    )
+    app.dependency_overrides[ticket_workflow_dependency] = lambda: workflow
+    try:
+        token = register_and_token(client, "alice@example.com")
+        res = create_ticket(client, token)
+    finally:
+        app.dependency_overrides.pop(ticket_workflow_dependency, None)
+
+    assert res.status_code == 201
+    assert res.json()["decision"]["raw_action"] == "APPROVE_REFUND_OR_REPLACEMENT"
+    decision_row = db_session.scalar(select(Decision))
+    assert decision_row.raw_action == "APPROVE_REFUND_OR_REPLACEMENT"
+
+
+def test_db_connection_is_not_held_during_llm_call(client: TestClient) -> None:
+    from src.database import engine
+
+    class InspectingWorkflow:
+        def __init__(self):
+            self.checked_out_during_call = None
+
+        def decide(self, request: TicketRequest) -> DecisionDraft:
+            self.checked_out_during_call = engine.pool.checkedout()
+            return DecisionDraft(
+                action="WAIT_AND_TRACK",
+                confidence=0.9,
+                reason="Standard delay.",
+                sources=["shipping.md"],
+                inferred_issue_type="shipping_delay",
+            )
+
+    inspecting_workflow = InspectingWorkflow()
+    app.dependency_overrides[ticket_workflow_dependency] = lambda: inspecting_workflow
+    try:
+        token = register_and_token(client, "alice@example.com")
+        res = create_ticket(client, token)
+    finally:
+        app.dependency_overrides.pop(ticket_workflow_dependency, None)
+
+    assert res.status_code == 201
+    assert inspecting_workflow.checked_out_during_call == 0

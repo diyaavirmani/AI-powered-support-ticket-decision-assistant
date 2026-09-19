@@ -511,13 +511,22 @@ def _render_decision_result(ticket: dict[str, Any]) -> None:
         retrieval_ms = decision.get("retrieval_latency_ms")
         llm_ms = decision.get("llm_latency_ms")
         guarded = decision.get("guardrail_triggered")
+        raw_act = decision.get("raw_action")
+        confidence = decision.get("confidence", 0.0)
+        is_fallback = confidence == 0.0 or "[System Fallback" in str(decision.get("reason", ""))
+
         telemetry_items = []
         if retrieval_ms is not None:
             telemetry_items.append(f"Retrieval: {retrieval_ms:.1f}ms")
         if llm_ms is not None:
             telemetry_items.append(f"LLM: {llm_ms:.1f}ms")
-        if guarded:
-            telemetry_items.append("[Guardrail Intervened]")
+        if is_fallback:
+            telemetry_items.append("[Fallback Escalation]")
+        elif guarded:
+            if raw_act:
+                telemetry_items.append(f"[Guardrail: {raw_act} -> {decision.get('action')}]")
+            else:
+                telemetry_items.append("[Guardrail Intervened]")
         elif retrieval_ms is not None or llm_ms is not None:
             telemetry_items.append("[Guardrail Verified]")
 
@@ -622,7 +631,11 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
         with col_left:
             st.markdown("#### Customer Request")
             msg = ticket.get("message", "—")
-            st.markdown(f"> {msg}")
+            safe_msg = html.escape(msg).replace("\n", "<br>")
+            st.markdown(
+                f'<div style="border-left: 3px solid #cbd5e1; padding: 8px 12px; color: #334155; background: #f8fafc; border-radius: 0 4px 4px 0; font-size: 0.9rem; line-height: 1.4;">{safe_msg}</div>',
+                unsafe_allow_html=True,
+            )
 
             st.write("")
             st.markdown("#### Order Facts")
@@ -686,13 +699,22 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
             retrieval_ms = decision.get("retrieval_latency_ms")
             llm_ms = decision.get("llm_latency_ms")
             guarded = decision.get("guardrail_triggered")
+            raw_act = decision.get("raw_action")
+            confidence = decision.get("confidence", 0.0)
+            is_fallback = confidence == 0.0 or "[System Fallback" in str(decision.get("reason", ""))
+
             telemetry_items = []
             if retrieval_ms is not None:
                 telemetry_items.append(f"Retrieval: {retrieval_ms:.1f}ms")
             if llm_ms is not None:
                 telemetry_items.append(f"LLM: {llm_ms:.1f}ms")
-            if guarded:
-                telemetry_items.append("[Guardrail Intervened]")
+            if is_fallback:
+                telemetry_items.append("[Fallback Escalation]")
+            elif guarded:
+                if raw_act:
+                    telemetry_items.append(f"[Guardrail: {raw_act} -> {decision.get('action')}]")
+                else:
+                    telemetry_items.append("[Guardrail Intervened]")
             elif retrieval_ms is not None or llm_ms is not None:
                 telemetry_items.append("[Guardrail Verified]")
 
@@ -702,30 +724,53 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
             # Human-in-the-Loop (HITL) Review & Override Panel
             st.divider()
             st.markdown("#### Agent Review & Override (HITL)")
+
+            reviews = ticket.get("reviews") or []
+            if reviews:
+                st.markdown("##### Review Audit Trail")
+                for rev in reviews:
+                    st.markdown(
+                        f"""
+                        <div style="background-color: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
+                            <div style="font-size: 0.74rem; font-weight: 700; text-transform: uppercase; color: #475569;">
+                                Agent ID #{rev.get('reviewer_id')} • {html.escape(str(rev.get('created_at', ''))[:19])}
+                            </div>
+                            <div style="font-size: 0.88rem; font-weight: 600; color: #1e293b; margin-top: 2px;">
+                                Action: {html.escape(format_action_label(rev.get('action', '')))}
+                            </div>
+                            <div style="font-size: 0.82rem; color: #64748b; margin-top: 2px;">
+                                Note: {html.escape(rev.get('reason', ''))}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
             reviewed_at = decision.get("reviewed_at")
             if reviewed_at:
                 override_act = decision.get("human_override_action") or "Accepted"
                 override_reason = decision.get("human_override_reason") or "No note provided."
                 st.markdown(
                     f"""
-                    <div style="background-color: #f0fdf4; padding: 12px 14px; border-radius: 8px; border: 1px solid #bbf7d0; margin-top: 4px;">
+                    <div style="background-color: #f0fdf4; padding: 12px 14px; border-radius: 8px; border: 1px solid #bbf7d0; margin-top: 4px; margin-bottom: 12px;">
                         <div style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: #166534; margin-bottom: 2px;">
-                            Review Completed
+                            Current Effective Resolution
                         </div>
                         <div style="font-size: 0.95rem; font-weight: 700; color: #166534;">
                             Resolution: {html.escape(format_action_label(override_act))}
                         </div>
                         <div style="font-size: 0.84rem; color: #334155; margin-top: 4px;">
-                            <strong>Note:</strong> {html.escape(override_reason)}
+                            <strong>Latest Note:</strong> {html.escape(override_reason)}
                         </div>
                         <div style="font-size: 0.74rem; color: #64748b; margin-top: 4px;">
-                            Timestamp: {html.escape(str(reviewed_at))}
+                            Updated: {html.escape(str(reviewed_at))}
                         </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-            else:
+
+            with st.expander("Record Additional Review or Override", expanded=not bool(reviews)):
                 col_accept, col_override = st.columns([1, 1.2])
                 with col_accept:
                     if st.button("Accept AI Decision", type="primary", use_container_width=True, key=f"accept_{ticket_id}"):
@@ -737,42 +782,41 @@ def _render_ticket_detail_workspace(ticket_id: int) -> None:
                             st.error(str(exc))
 
                 with col_override:
-                    with st.expander("Override Decision", expanded=False):
-                        action_options = [
-                            "APPROVE_REFUND_OR_REPLACEMENT",
-                            "APPROVE_REPLACEMENT",
-                            "APPROVE_RETURN",
-                            "CANCEL_AND_REFUND",
-                            "CANNOT_CANCEL_AFTER_DISPATCH",
-                            "NEEDS_MORE_INFORMATION",
-                            "OFFER_REPLACEMENT_OR_REFUND",
-                            "OPEN_SHIPPING_INVESTIGATION",
-                            "REJECT_FOOD_RETURN",
-                            "REJECT_OPENED_ITEM",
-                            "REJECT_OUTSIDE_WINDOW",
-                            "REPLACE_CORRECT_ITEM",
-                            "REQUEST_DEFECT_EVIDENCE",
-                            "REQUEST_PHOTOS",
-                            "WAIT_AND_TRACK",
-                        ]
-                        override_action = st.selectbox("Corrected Action", action_options, key=f"override_act_{ticket_id}")
-                        override_reason = st.text_input("Override Reason (Audit Log)", placeholder="e.g. Approved VIP customer exception", key=f"override_rsn_{ticket_id}")
-                        if st.button("Submit Override", type="secondary", use_container_width=True, key=f"btn_override_{ticket_id}"):
-                            if not override_reason or not override_reason.strip():
-                                st.warning("Please provide a reason for overriding.")
-                            else:
-                                try:
-                                    get_client().review_ticket(
-                                        st.session_state["token"],
-                                        ticket_id,
-                                        action=override_action,
-                                        reason=override_reason.strip(),
-                                        accept=False,
-                                    )
-                                    st.success("Override recorded in audit log!")
-                                    st.rerun()
-                                except Exception as exc:
-                                    st.error(str(exc))
+                    action_options = [
+                        "APPROVE_REFUND_OR_REPLACEMENT",
+                        "APPROVE_REPLACEMENT",
+                        "APPROVE_RETURN",
+                        "CANCEL_AND_REFUND",
+                        "CANNOT_CANCEL_AFTER_DISPATCH",
+                        "NEEDS_MORE_INFORMATION",
+                        "OFFER_REPLACEMENT_OR_REFUND",
+                        "OPEN_SHIPPING_INVESTIGATION",
+                        "REJECT_FOOD_RETURN",
+                        "REJECT_OPENED_ITEM",
+                        "REJECT_OUTSIDE_WINDOW",
+                        "REPLACE_CORRECT_ITEM",
+                        "REQUEST_DEFECT_EVIDENCE",
+                        "REQUEST_PHOTOS",
+                        "WAIT_AND_TRACK",
+                    ]
+                    override_action = st.selectbox("Corrected Action", action_options, key=f"override_act_{ticket_id}")
+                    override_reason = st.text_input("Override Reason (Audit Log)", placeholder="e.g. Approved VIP customer exception", key=f"override_rsn_{ticket_id}")
+                    if st.button("Submit Override", type="secondary", use_container_width=True, key=f"btn_override_{ticket_id}"):
+                        if not override_reason or not override_reason.strip():
+                            st.warning("Please provide a reason for overriding.")
+                        else:
+                            try:
+                                get_client().review_ticket(
+                                    st.session_state["token"],
+                                    ticket_id,
+                                    action=override_action,
+                                    reason=override_reason.strip(),
+                                    accept=False,
+                                )
+                                st.success("Override recorded in audit log!")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(str(exc))
 
 
 # ------------------------------------------------------------------

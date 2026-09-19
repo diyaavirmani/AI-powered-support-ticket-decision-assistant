@@ -22,6 +22,7 @@ class EmailRequest(BaseModel):
 
 class RegistrationRequest(EmailRequest):
     password: SecretStr = Field(min_length=12, max_length=128)
+    role: str = Field(default="agent", max_length=32)
 
 
 class LoginRequest(EmailRequest):
@@ -124,6 +125,8 @@ class DecisionDraft(BaseModel):
     retrieval_latency_ms: float | None = None
     llm_latency_ms: float | None = None
     guardrail_triggered: bool | None = False
+    raw_action: Action | None = None
+    raw_reason: str | None = None
 
     @field_validator("confidence")
     @classmethod
@@ -156,6 +159,7 @@ class DecisionResponse(DecisionDraft):
 
     id: int
     created_at: datetime
+    raw_action: Action | None = None
     human_override_action: str | None = None
     human_override_reason: str | None = None
     reviewed_at: datetime | None = None
@@ -179,6 +183,17 @@ class ReviewRequest(BaseModel):
         return None
 
 
+class TicketReviewRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ticket_id: int
+    reviewer_id: int
+    action: str
+    reason: str
+    created_at: datetime
+
+
 class TicketResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -192,3 +207,4 @@ class TicketResponse(BaseModel):
     order_status: OrderStatus | None
     created_at: datetime
     decision: DecisionResponse
+    reviews: list[TicketReviewRecord] = []

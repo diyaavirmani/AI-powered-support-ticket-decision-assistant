@@ -130,3 +130,77 @@ def test_review_enforces_tenancy_isolation(
         headers=auth_headers(alice),
     )
     assert res.status_code == 404
+
+
+def test_multiple_reviews_append_to_audit_trail(
+    client: TestClient, workflow_override: FakeWorkflow
+):
+    alice = register_and_token(client, "alice@example.com")
+    ticket_res = client.post(
+        "/tickets",
+        json={"message": "Damaged order needing review"},
+        headers=auth_headers(alice),
+    )
+    ticket_id = ticket_res.json()["id"]
+
+    # Review 1: Supervisor override
+    res1 = client.post(
+        f"/tickets/{ticket_id}/review",
+        json={
+            "accept": False,
+            "action": "APPROVE_REFUND_OR_REPLACEMENT",
+            "reason": "Initial supervisor review approved refund.",
+        },
+        headers=auth_headers(alice),
+    )
+    assert res1.status_code == 200
+    assert len(res1.json()["reviews"]) == 1
+    assert res1.json()["reviews"][0]["action"] == "APPROVE_REFUND_OR_REPLACEMENT"
+
+    # Review 2: Second review
+    res2 = client.post(
+        f"/tickets/{ticket_id}/review",
+        json={
+            "accept": False,
+            "action": "REQUEST_PHOTOS",
+            "reason": "QA lead reopened: customer must upload package photo.",
+        },
+        headers=auth_headers(alice),
+    )
+    assert res2.status_code == 200
+    reviews = res2.json()["reviews"]
+    assert len(reviews) == 2
+    assert reviews[0]["action"] == "APPROVE_REFUND_OR_REPLACEMENT"
+    assert reviews[1]["action"] == "REQUEST_PHOTOS"
+    assert res2.json()["decision"]["human_override_action"] == "REQUEST_PHOTOS"
+
+
+def test_customer_role_cannot_review_tickets(
+    client: TestClient, db_session: Session, workflow_override: FakeWorkflow
+):
+    from src.models import User
+    from sqlalchemy import select
+
+    # Register normal agent and create ticket
+    agent_token = register_and_token(client, "agent@example.com")
+    ticket_res = client.post(
+        "/tickets",
+        json={"message": "Ticket to review"},
+        headers=auth_headers(agent_token),
+    )
+    ticket_id = ticket_res.json()["id"]
+
+    # Demote user to customer role in DB
+    user = db_session.scalar(select(User).where(User.email == "agent@example.com"))
+    assert user is not None
+    user.role = "customer"
+    db_session.commit()
+
+    # Customer tries to review ticket
+    res = client.post(
+        f"/tickets/{ticket_id}/review",
+        json={"accept": True},
+        headers=auth_headers(agent_token),
+    )
+    assert res.status_code == 403
+    assert "Only support agents" in res.json()["detail"]

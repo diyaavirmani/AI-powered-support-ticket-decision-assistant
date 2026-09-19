@@ -52,8 +52,13 @@ class ApiClient:
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _handle_response(self, response: httpx.Response) -> Any:
+    def _handle_response(self, response: httpx.Response, *, context: str = "") -> Any:
         if response.status_code == 401:
+            if context == "login":
+                raise AuthenticationError(
+                    "Invalid email or password.",
+                    status_code=401,
+                )
             raise AuthenticationError(
                 "Session expired or invalid — please log in again.",
                 status_code=401,
@@ -108,6 +113,7 @@ class ApiClient:
         token: str | None = None,
         json_body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
+        context: str = "",
     ) -> Any:
         try:
             with httpx.Client(timeout=self._timeout) as client:
@@ -130,17 +136,20 @@ class ApiClient:
             raise ApiError(
                 "A network error occurred. Please check your connection.",
             ) from None
-        return self._handle_response(response)
+        return self._handle_response(response, context=context)
 
     # ------------------------------------------------------------------
     # Public API methods
     # ------------------------------------------------------------------
 
-    def register(self, email: str, password: str) -> dict[str, Any]:
+    def register(self, email: str, password: str, role: str | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"email": email, "password": password}
+        if role is not None:
+            payload["role"] = role
         return self._request(
             "POST",
             "/register",
-            json_body={"email": email, "password": password},
+            json_body=payload,
         )
 
     def login(self, email: str, password: str) -> str:
@@ -149,6 +158,7 @@ class ApiClient:
             "POST",
             "/login",
             json_body={"email": email, "password": password},
+            context="login",
         )
         token = data.get("access_token")
         if not token or not isinstance(token, str):
