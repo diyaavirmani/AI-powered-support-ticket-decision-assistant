@@ -521,7 +521,31 @@ def render_auth() -> None:
                             st.session_state["user"] = user
                             st.rerun()
                         except ApiError as exc:
-                            st.error(str(exc))
+                            st.error(f"{exc} If you forgot your password, use the 'Forgot Password? Reset it here' section below or the Forgot Password tab above.")
+
+                with st.expander("Forgot Password? Reset it here", expanded=False):
+                    with st.form("quick_reset_form", clear_on_submit=True):
+                        st.caption("Enter your registered work email and a new password (min 12 characters).")
+                        quick_email = st.text_input("Registered Work Email", key="quick_reset_email", placeholder="agent@company.com")
+                        quick_new_password = st.text_input(
+                            "New Password (min 12 characters)",
+                            type="password",
+                            key="quick_reset_password",
+                            help="Must be at least 12 characters.",
+                        )
+                        quick_submit = st.form_submit_button("Reset Password", type="secondary", use_container_width=True)
+
+                    if quick_submit:
+                        if not quick_email or not quick_new_password:
+                            st.warning("Please provide both email and new password.")
+                        elif len(quick_new_password) < 12:
+                            st.warning("New password must be at least 12 characters.")
+                        else:
+                            try:
+                                get_client().reset_password(quick_email.strip(), quick_new_password)
+                                st.success("Password reset successfully! You can now log in above with your new password.")
+                            except ApiError as exc:
+                                st.error(str(exc))
 
             with tab_register:
                 with st.form("register_form", clear_on_submit=True):
