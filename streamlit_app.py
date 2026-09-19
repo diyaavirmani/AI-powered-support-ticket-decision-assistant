@@ -144,6 +144,69 @@ def get_action_style(action: str | None) -> dict[str, str]:
 # Identifies missing policy facts and asks targeted questions
 # ------------------------------------------------------------------
 
+def extract_facts_from_text(text: str) -> dict[str, Any]:
+    """Intelligently extract mentioned order facts from customer message text."""
+    extracted: dict[str, Any] = {}
+    if not text:
+        return extracted
+    t_lower = text.lower()
+
+    # 1. Order value in INR
+    val_match = re.search(r"(?:₹|inr|rs\.?|worth|cost|price|valued at)\s*(\d+(?:\.\d{1,2})?)", t_lower)
+    if not val_match:
+        val_match = re.search(r"(\d+(?:\.\d{1,2})?)\s*(?:rupees|rs|inr)", t_lower)
+    if val_match:
+        try:
+            extracted["order_value_inr"] = float(val_match.group(1))
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Days since delivery
+    deliv_match = re.search(r"(?:delivered|received|arrived)\s*(?:about\s*)?(\d+)\s*days?\s*(?:ago|back)?", t_lower)
+    if not deliv_match:
+        deliv_match = re.search(r"(\d+)\s*days?\s*(?:since|after|of)\s*(?:delivery|receiving|arrival)", t_lower)
+    if not deliv_match:
+        if "delivered yesterday" in t_lower or "received yesterday" in t_lower:
+            extracted["days_since_delivery"] = 1
+        elif "delivered today" in t_lower or "received today" in t_lower:
+            extracted["days_since_delivery"] = 0
+    elif deliv_match:
+        try:
+            extracted["days_since_delivery"] = int(deliv_match.group(1))
+        except (ValueError, TypeError):
+            pass
+
+    # 3. Days since dispatch
+    disp_match = re.search(r"(?:dispatched|shipped|sent)\s*(?:about\s*)?(\d+)\s*days?\s*(?:ago|back)?", t_lower)
+    if not disp_match:
+        disp_match = re.search(r"(\d+)\s*days?\s*(?:since|after)\s*(?:dispatch|shipping)", t_lower)
+    if disp_match:
+        try:
+            extracted["days_since_dispatch"] = int(disp_match.group(1))
+        except (ValueError, TypeError):
+            pass
+
+    # 4. Product type
+    if any(k in t_lower for k in ["food", "snack", "chocolate", "coffee", "biscuit", "edible", "tea", "cereal"]):
+        extracted["product_type"] = "food"
+    elif any(k in t_lower for k in ["mug", "shirt", "shoe", "electronics", "headphone", "cable", "gadget", "book"]):
+        extracted["product_type"] = "non_food"
+
+    # 5. Opened status
+    if "unopened" in t_lower or "sealed" in t_lower or "never opened" in t_lower:
+        extracted["opened_status"] = "unopened"
+    elif "opened" in t_lower or "unsealed" in t_lower or "unboxed" in t_lower:
+        extracted["opened_status"] = "opened"
+
+    # 6. Order status
+    if "dispatched" in t_lower or "shipped" in t_lower or "in transit" in t_lower or "out for delivery" in t_lower:
+        extracted["order_status"] = "dispatched"
+    elif "processing" in t_lower or "not yet shipped" in t_lower or "not dispatched" in t_lower:
+        extracted["order_status"] = "processing"
+
+    return extracted
+
+
 def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any]:
     """Analyze customer message and determine missing policy evidence requirements."""
     msg = (message or "").lower()
@@ -172,6 +235,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Policy requires photographs if value exceeds ₹2,000.",
                 "type": "number",
                 "placeholder": "e.g. 2500",
+                "quick_options": [850, 1200, 2500, 3500],
             },
             {
                 "field": "days_since_delivery",
@@ -180,6 +244,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Damage claims must be reported within 7 calendar days of delivery.",
                 "type": "int",
                 "placeholder": "e.g. 3",
+                "quick_options": [0, 1, 2, 5, 8],
             },
         ],
         "defective": [
@@ -190,6 +255,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Functional defect replacement is only eligible within 14 calendar days.",
                 "type": "int",
                 "placeholder": "e.g. 5",
+                "quick_options": [2, 5, 10, 15],
             },
             {
                 "field": "order_value_inr",
@@ -198,6 +264,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Policy requires defect evidence if order exceeds ₹3,000.",
                 "type": "number",
                 "placeholder": "e.g. 3500",
+                "quick_options": [1200, 2500, 3500, 5000],
             },
         ],
         "return": [
@@ -224,6 +291,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Unopened products may be returned within 14 calendar days.",
                 "type": "int",
                 "placeholder": "e.g. 4",
+                "quick_options": [1, 3, 7, 14, 20],
             },
         ],
         "cancellation": [
@@ -244,6 +312,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Policy tiers: 1-5 days standard, 6-7 days wait & track, 8-10 days investigate, >10 days replace/refund.",
                 "type": "int",
                 "placeholder": "e.g. 9",
+                "quick_options": [3, 6, 9, 12],
             },
         ],
         "wrong_item": [
@@ -254,6 +323,7 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
                 "policy_note": "Wrong item claims must be submitted within 7 calendar days of delivery.",
                 "type": "int",
                 "placeholder": "e.g. 2",
+                "quick_options": [1, 3, 6, 10],
             },
         ],
     }
@@ -281,6 +351,24 @@ def analyze_evidence_needs(message: str, facts: dict[str, Any]) -> dict[str, Any
         "completeness": completeness,
         "is_sufficient": is_sufficient,
     }
+
+
+def generate_customer_clarification_message(issue: str, missing: list[dict[str, Any]]) -> str:
+    """Generate professional follow-up message asking customer for missing evidence."""
+    issue_label = format_issue_type(issue).lower()
+    items = []
+    for i, q in enumerate(missing):
+        q_text = q.get("question", "")
+        items.append(f"{i + 1}. {q_text}")
+    questions_list = "\n".join(items)
+    return (
+        f"Hello,\n\n"
+        f"Thank you for reaching out regarding your inquiry about {issue_label}.\n\n"
+        f"To help us resolve your case under our company store policy, could you please provide us with a few more details:\n\n"
+        f"{questions_list}\n\n"
+        f"Once you reply with these details, we will immediately process your resolution.\n\n"
+        f"Best regards,\nCustomer Support Team"
+    )
 
 
 def _inject_custom_css() -> None:
@@ -1183,6 +1271,11 @@ def render_new_decision() -> None:
 
             if current_input != draft_msg:
                 st.session_state["draft_message"] = current_input
+                auto_facts = extract_facts_from_text(current_input)
+                for k, v in auto_facts.items():
+                    if draft_facts.get(k) is None:
+                        draft_facts[k] = v
+                st.session_state["draft_facts"] = draft_facts
                 st.rerun()
 
         # Step 2: Evidence Gathering & Question Engine
@@ -1214,77 +1307,97 @@ def render_new_decision() -> None:
                     if analysis["is_sufficient"]:
                         st.markdown('<span class="status-pill-resolved"><span class="status-dot dot-green"></span> Evidence Complete</span>', unsafe_allow_html=True)
                     else:
-                        st.markdown('<span class="status-pill-open"><span class="status-dot dot-yellow"></span> Needs Evidence</span>', unsafe_allow_html=True)
+                        st.markdown('<span class="status-pill-open"><span class="status-dot dot-yellow"></span> Needs More Information</span>', unsafe_allow_html=True)
 
                 st.progress(comp)
                 st.caption(f"Evidence Completeness: {pop_count} of {total_req} policy fields populated ({int(comp * 100)}%).")
 
                 # If missing fields exist, ask targeted questions
                 if analysis["missing"]:
+                    missing_labels = ", ".join(q["label"] for q in analysis["missing"])
                     st.markdown(
-                        """
-                        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 10px 0 14px 0;">
-                            <div style="font-size: 0.76rem; font-weight: 700; text-transform: uppercase; color: #92400e; margin-bottom: 2px;">
-                                Clarifying Questions Needed
+                        f"""
+                        <div style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 10px 0 12px 0;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                                <span style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; color: #92400e;">
+                                    Action Required: Information Incomplete
+                                </span>
+                                <span class="badge-warning">{len(analysis['missing'])} Policy Fields Missing</span>
                             </div>
-                            <div style="font-size: 0.82rem; color: #92400e;">
-                                To avoid guessing, answer the questions below to populate the required policy facts:
+                            <div style="font-size: 0.82rem; color: #92400e; line-height: 1.4;">
+                                Policy rules for <strong>{html.escape(issue_display)}</strong> require additional evidence ({html.escape(missing_labels)}) before a final approval or rejection can be determined.
                             </div>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
 
-                    with st.form("evidence_question_form"):
-                        new_fact_inputs: dict[str, Any] = {}
-                        for q in analysis["missing"]:
-                            st.markdown(f"**{q['question']}**")
-                            st.caption(f"Note: {q['policy_note']}")
+                    tab_q, tab_ask = st.tabs(["Answer Clarifying Questions", "Ask Customer (Draft Reply)"])
 
-                            if q["type"] == "number":
-                                new_fact_inputs[q["field"]] = st.text_input(
-                                    f"Enter {q['label']}",
-                                    placeholder=q.get("placeholder", ""),
-                                    key=f"q_{q['field']}",
-                                )
-                            elif q["type"] == "int":
-                                new_fact_inputs[q["field"]] = st.text_input(
-                                    f"Enter {q['label']}",
-                                    placeholder=q.get("placeholder", ""),
-                                    key=f"q_{q['field']}",
-                                )
-                            elif q["type"] == "select":
-                                opts = ["— Select —"] + q["options"]
-                                new_fact_inputs[q["field"]] = st.selectbox(
-                                    f"Select {q['label']}",
-                                    opts,
-                                    key=f"q_{q['field']}",
-                                )
-                            st.write("")
+                    with tab_q:
+                        with st.form("evidence_question_form"):
+                            new_fact_inputs: dict[str, Any] = {}
+                            for q in analysis["missing"]:
+                                st.markdown(f"**{q['question']}**")
+                                st.caption(f"Policy Note: {q['policy_note']}")
 
-                        submitted_questions = st.form_submit_button("Populate Answered Facts", type="secondary", use_container_width=True)
+                                if q["type"] == "number":
+                                    new_fact_inputs[q["field"]] = st.text_input(
+                                        f"Enter {q['label']}",
+                                        placeholder=q.get("placeholder", ""),
+                                        key=f"q_{q['field']}",
+                                    )
+                                elif q["type"] == "int":
+                                    new_fact_inputs[q["field"]] = st.text_input(
+                                        f"Enter {q['label']}",
+                                        placeholder=q.get("placeholder", ""),
+                                        key=f"q_{q['field']}",
+                                    )
+                                elif q["type"] == "select":
+                                    opts = ["— Select —"] + q["options"]
+                                    new_fact_inputs[q["field"]] = st.selectbox(
+                                        f"Select {q['label']}",
+                                        opts,
+                                        key=f"q_{q['field']}",
+                                    )
+                                st.write("")
 
-                    if submitted_questions:
-                        # Parse and update draft facts
-                        for field, raw_val in new_fact_inputs.items():
-                            if raw_val and raw_val != "— Select —":
-                                if field in ("order_value_inr",):
-                                    try:
-                                        draft_facts[field] = float(str(raw_val).strip())
-                                    except ValueError:
-                                        pass
-                                elif field in ("days_since_delivery", "days_since_dispatch"):
-                                    try:
-                                        draft_facts[field] = int(str(raw_val).strip())
-                                    except ValueError:
-                                        pass
-                                else:
-                                    draft_facts[field] = str(raw_val).strip()
-                        st.session_state["draft_facts"] = draft_facts
-                        st.rerun()
+                            submitted_questions = st.form_submit_button("Populate Answered Facts", type="secondary", use_container_width=True)
+
+                        if submitted_questions:
+                            for field, raw_val in new_fact_inputs.items():
+                                if raw_val and raw_val != "— Select —":
+                                    if field in ("order_value_inr",):
+                                        try:
+                                            draft_facts[field] = float(str(raw_val).strip())
+                                        except ValueError:
+                                            pass
+                                    elif field in ("days_since_delivery", "days_since_dispatch"):
+                                        try:
+                                            draft_facts[field] = int(str(raw_val).strip())
+                                        except ValueError:
+                                            pass
+                                    else:
+                                        draft_facts[field] = str(raw_val).strip()
+                            st.session_state["draft_facts"] = draft_facts
+                            st.rerun()
+
+                    with tab_ask:
+                        st.caption("If you do not have these details, copy this prepared follow-up request to ask the customer:")
+                        cust_reply_draft = generate_customer_clarification_message(analysis["issue"], analysis["missing"])
+                        st.text_area("Customer Clarification Message", value=cust_reply_draft, height=160, key="txt_cust_clarify_preview")
+                        if st.button("Copy / Use Message as Ready", key="btn_use_cust_msg"):
+                            st.success("Message ready. Send this to the customer via email or support chat.")
 
                 # Action button to evaluate final decision
                 st.write("")
+                if not analysis["is_sufficient"]:
+                    missing_names = ", ".join(q["label"] for q in analysis["missing"])
+                    st.warning(
+                        f"Notice: {len(analysis['missing'])} required fact(s) are missing ({missing_names}). "
+                        "Store policy guardrails will assign 'Needs More Information'. "
+                        "Please answer the questions above to enable an approval decision."
+                    )
                 if st.button("Generate Grounded AI Decision", type="primary", use_container_width=True, key="btn_eval_decision"):
                     if not draft_msg.strip():
                         st.warning("Please provide a customer message.")
@@ -1375,6 +1488,21 @@ def _render_copilot_decision_card(ticket: dict[str, Any]) -> None:
     </div>
     """
     st.markdown(banner_html, unsafe_allow_html=True)
+
+    if action == "NEEDS_MORE_INFORMATION":
+        st.markdown(
+            """
+            <div style="background-color: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+                <div style="font-size: 0.78rem; font-weight: 800; color: #92400e; text-transform: uppercase; margin-bottom: 2px;">
+                    Information Needed from Customer
+                </div>
+                <div style="font-size: 0.8rem; color: #78350f; line-height: 1.4;">
+                    Store policy guardrails intercepted this case because essential facts are missing. Ask the customer the questions highlighted in the policy rationale below before approving a refund or replacement.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Confidence Metric & Linear Progress Indicator
     confidence = decision.get("confidence")
@@ -1736,6 +1864,102 @@ def _render_history_ticket_workspace(ticket_id: int) -> None:
                 """,
                 unsafe_allow_html=True,
             )
+
+            # If ticket needs more information, provide follow-up request and re-evaluation form
+            hist_analysis = analyze_evidence_needs(ticket.get("message", ""), ticket)
+            if action == "NEEDS_MORE_INFORMATION" and hist_analysis["missing"]:
+                missing_labels = ", ".join(q["label"] for q in hist_analysis["missing"])
+                st.markdown(
+                    f"""
+                    <div style="background-color: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-top: 14px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                            <span style="font-size: 0.82rem; font-weight: 800; text-transform: uppercase; color: #92400e;">
+                                Action Required: Incomplete Information
+                            </span>
+                            <span class="badge-warning">{len(hist_analysis['missing'])} Missing Facts</span>
+                        </div>
+                        <div style="font-size: 0.82rem; color: #78350f; line-height: 1.45;">
+                            This ticket cannot receive an automatic approval because policy facts ({html.escape(missing_labels)}) are missing. Ask the customer for clarification, or provide their response below to re-evaluate.
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                hist_tab_q, hist_tab_ask = st.tabs(["Provide Customer's Answer & Re-Evaluate", "Ask Customer (Draft Reply)"])
+
+                with hist_tab_ask:
+                    st.caption("Copy this message to send to the customer via chat or email:")
+                    clarify_text = generate_customer_clarification_message(hist_analysis["issue"], hist_analysis["missing"])
+                    st.text_area("Customer Clarification Request", value=clarify_text, height=150, key=f"hist_clarify_{ticket_id}")
+                    if st.button("Copy / Use Message as Ready", key=f"hist_btn_copy_{ticket_id}"):
+                        st.success("Message ready to send to customer.")
+
+                with hist_tab_q:
+                    with st.form(f"hist_resolve_form_{ticket_id}"):
+                        st.markdown("**Enter Customer's Clarifying Information:**")
+                        updated_inputs: dict[str, Any] = {}
+                        for q in hist_analysis["missing"]:
+                            st.markdown(f"*{q['question']}*")
+                            st.caption(f"Policy Note: {q['policy_note']}")
+                            if q["type"] in ("number", "int"):
+                                updated_inputs[q["field"]] = st.text_input(
+                                    f"Enter {q['label']}",
+                                    placeholder=q.get("placeholder", ""),
+                                    key=f"h_in_{q['field']}_{ticket_id}",
+                                )
+                            elif q["type"] == "select":
+                                opts = ["— Select —"] + q["options"]
+                                updated_inputs[q["field"]] = st.selectbox(
+                                    f"Select {q['label']}",
+                                    opts,
+                                    key=f"h_in_{q['field']}_{ticket_id}",
+                                )
+                            st.write("")
+
+                        submit_update = st.form_submit_button("Re-Evaluate Ticket with New Information", type="primary", use_container_width=True)
+
+                    if submit_update:
+                        merged_facts = {
+                            "order_value_inr": ticket.get("order_value_inr"),
+                            "days_since_delivery": ticket.get("days_since_delivery"),
+                            "days_since_dispatch": ticket.get("days_since_dispatch"),
+                            "product_type": ticket.get("product_type"),
+                            "opened_status": ticket.get("opened_status"),
+                            "order_status": ticket.get("order_status"),
+                        }
+                        for field, raw_val in updated_inputs.items():
+                            if raw_val and raw_val != "— Select —":
+                                if field in ("order_value_inr",):
+                                    try:
+                                        merged_facts[field] = float(str(raw_val).strip())
+                                    except ValueError:
+                                        pass
+                                elif field in ("days_since_delivery", "days_since_dispatch"):
+                                    try:
+                                        merged_facts[field] = int(str(raw_val).strip())
+                                    except ValueError:
+                                        pass
+                                else:
+                                    merged_facts[field] = str(raw_val).strip()
+
+                        with st.spinner("Re-evaluating ticket against company policies..."):
+                            try:
+                                new_ticket = get_client().create_ticket(
+                                    st.session_state["token"],
+                                    message=ticket.get("message", ""),
+                                    order_value_inr=merged_facts.get("order_value_inr"),
+                                    days_since_delivery=merged_facts.get("days_since_delivery"),
+                                    days_since_dispatch=merged_facts.get("days_since_dispatch"),
+                                    product_type=merged_facts.get("product_type"),
+                                    opened_status=merged_facts.get("opened_status"),
+                                    order_status=merged_facts.get("order_status"),
+                                )
+                                st.session_state["selected_ticket_id"] = new_ticket.get("id")
+                                st.success("New evidence applied! Re-evaluated ticket resolution generated.")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(str(exc))
 
     # ==================================================================
     # COLUMN 3 — Right: AI Copilot & HITL Review Panel
